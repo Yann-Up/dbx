@@ -425,10 +425,10 @@ fn is_kimi_model(model: &str) -> bool {
     if let Some(rest) = model.strip_prefix("kimi-k") {
         if rest.starts_with("2.") && rest.len() > 2 {
             // K2.x — the digit after "2." must be >= 5 (so K2.5+)
-            rest[2..].chars().next().map_or(false, |c| c.is_ascii_digit() && c >= '5')
+            rest[2..].chars().next().is_some_and(|c| c.is_ascii_digit() && c >= '5')
         } else {
             // K3+ — first char must be digit >= 3
-            rest.chars().next().map_or(false, |c| c.is_ascii_digit() && c >= '3')
+            rest.chars().next().is_some_and(|c| c.is_ascii_digit() && c >= '3')
         }
     } else {
         false
@@ -436,7 +436,7 @@ fn is_kimi_model(model: &str) -> bool {
 }
 
 pub fn supports_temperature(config: &AiConfig) -> bool {
-    !(is_openai_api_config(config) && is_openai_reasoning_model(&config.model))
+    !(is_kimi_model(&config.model) || is_openai_api_config(config) && is_openai_reasoning_model(&config.model))
 }
 
 pub fn add_temperature_if_supported(body: &mut serde_json::Value, request: &AiCompletionRequest) {
