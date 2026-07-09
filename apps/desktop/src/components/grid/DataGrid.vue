@@ -2467,15 +2467,15 @@ const dataGridTopbarRef = ref<HTMLDivElement>();
 const headerRef = ref<HTMLDivElement>();
 const gridScrollbarGutter = ref(0);
 const gridHorizontalScrollbarTrackRef = ref<HTMLDivElement>();
+const gridHorizontalScrollbarThumbRef = ref<HTMLDivElement>();
 const gridVerticalScrollbarTrackRef = ref<HTMLDivElement>();
+const gridVerticalScrollbarThumbRef = ref<HTMLDivElement>();
 const hasGridHorizontalOverflow = ref(false);
 const hasGridVerticalOverflow = ref(false);
-const gridHorizontalScrollbarThumbLeftPercent = ref(0);
-const gridHorizontalScrollbarThumbWidthPercent = ref(100);
-const gridVerticalScrollbarThumbTopPercent = ref(0);
-const gridVerticalScrollbarThumbHeightPercent = ref(100);
-const gridHorizontalScrollbarDragging = ref(false);
-const gridVerticalScrollbarDragging = ref(false);
+let gridHorizontalScrollbarThumbLeftPercent = 0;
+let gridHorizontalScrollbarThumbWidthPercent = 100;
+let gridVerticalScrollbarThumbTopPercent = 0;
+let gridVerticalScrollbarThumbHeightPercent = 100;
 let gridHorizontalScrollbarFrame = 0;
 let gridHorizontalScrollbarDragFrame = 0;
 let gridHorizontalScrollbarPendingClientX = 0;
@@ -2497,6 +2497,8 @@ let gridVerticalScrollbarDragState: {
   thumbOffsetPx: number;
   maxScrollTop: number;
 } | null = null;
+const GRID_HORIZONTAL_SCROLLBAR_DRAGGING_CLASS = "data-grid-horizontal-scrollbar--dragging";
+const GRID_VERTICAL_SCROLLBAR_DRAGGING_CLASS = "data-grid-vertical-scrollbar--dragging";
 const hiddenColumnIndexes = ref<Set<number>>(new Set());
 const nullColumnsHidden = ref(false);
 const autoHiddenNullColumnIndexes = ref<Set<number>>(new Set());
@@ -2728,9 +2730,12 @@ const renderedColumnOffsets = computed(() => {
 });
 
 function updateGridHorizontalViewport(element: HTMLElement) {
-  gridHorizontalScrollLeft.value = element.scrollLeft;
-  gridViewportWidth.value = element.clientWidth;
-  updateGridHorizontalScrollbar(element);
+  const nextScrollLeft = element.scrollLeft;
+  const nextViewportWidth = element.clientWidth;
+  const horizontalChanged = gridHorizontalScrollLeft.value !== nextScrollLeft || gridViewportWidth.value !== nextViewportWidth;
+  if (gridHorizontalScrollLeft.value !== nextScrollLeft) gridHorizontalScrollLeft.value = nextScrollLeft;
+  if (gridViewportWidth.value !== nextViewportWidth) gridViewportWidth.value = nextViewportWidth;
+  if (horizontalChanged) updateGridHorizontalScrollbar(element);
   updateGridVerticalScrollbar(element);
 }
 
@@ -2740,38 +2745,84 @@ function gridScrollerElement(): HTMLElement | null {
 
 function updateGridHorizontalScrollbar(element: HTMLElement | null = gridScrollerElement()) {
   if (!element) {
-    hasGridHorizontalOverflow.value = false;
-    gridHorizontalScrollbarThumbLeftPercent.value = 0;
-    gridHorizontalScrollbarThumbWidthPercent.value = 100;
+    setGridHorizontalOverflow(false);
+    gridHorizontalScrollbarThumbLeftPercent = 0;
+    gridHorizontalScrollbarThumbWidthPercent = 100;
+    applyGridHorizontalScrollbarThumbStyle();
     return;
   }
 
   const maxScrollLeft = Math.max(0, element.scrollWidth - element.clientWidth);
-  hasGridHorizontalOverflow.value = maxScrollLeft > 1;
+  setGridHorizontalOverflow(maxScrollLeft > 1);
 
   const rawThumbWidth = element.scrollWidth > 0 ? (element.clientWidth / element.scrollWidth) * 100 : 100;
   const thumbWidth = Math.min(100, Math.max(6, rawThumbWidth));
   const thumbTravel = Math.max(0, 100 - thumbWidth);
-  gridHorizontalScrollbarThumbWidthPercent.value = thumbWidth;
-  gridHorizontalScrollbarThumbLeftPercent.value = maxScrollLeft > 0 ? (element.scrollLeft / maxScrollLeft) * thumbTravel : 0;
+  gridHorizontalScrollbarThumbWidthPercent = thumbWidth;
+  gridHorizontalScrollbarThumbLeftPercent = maxScrollLeft > 0 ? (element.scrollLeft / maxScrollLeft) * thumbTravel : 0;
+  if (!applyGridHorizontalScrollbarThumbStyle() && hasGridHorizontalOverflow.value) {
+    nextTick(applyGridHorizontalScrollbarThumbStyle);
+  }
 }
 
 function updateGridVerticalScrollbar(element: HTMLElement | null = gridScrollerElement()) {
   if (!element) {
-    hasGridVerticalOverflow.value = false;
-    gridVerticalScrollbarThumbTopPercent.value = 0;
-    gridVerticalScrollbarThumbHeightPercent.value = 100;
+    setGridVerticalOverflow(false);
+    gridVerticalScrollbarThumbTopPercent = 0;
+    gridVerticalScrollbarThumbHeightPercent = 100;
+    applyGridVerticalScrollbarThumbStyle();
     return;
   }
 
   const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
-  hasGridVerticalOverflow.value = maxScrollTop > 1;
+  setGridVerticalOverflow(maxScrollTop > 1);
 
   const rawThumbHeight = element.scrollHeight > 0 ? (element.clientHeight / element.scrollHeight) * 100 : 100;
   const thumbHeight = Math.min(100, Math.max(6, rawThumbHeight));
   const thumbTravel = Math.max(0, 100 - thumbHeight);
-  gridVerticalScrollbarThumbHeightPercent.value = thumbHeight;
-  gridVerticalScrollbarThumbTopPercent.value = maxScrollTop > 0 ? (element.scrollTop / maxScrollTop) * thumbTravel : 0;
+  gridVerticalScrollbarThumbHeightPercent = thumbHeight;
+  gridVerticalScrollbarThumbTopPercent = maxScrollTop > 0 ? (element.scrollTop / maxScrollTop) * thumbTravel : 0;
+  if (!applyGridVerticalScrollbarThumbStyle() && hasGridVerticalOverflow.value) {
+    nextTick(applyGridVerticalScrollbarThumbStyle);
+  }
+}
+
+function setGridHorizontalOverflow(overflow: boolean) {
+  if (hasGridHorizontalOverflow.value === overflow) return;
+  hasGridHorizontalOverflow.value = overflow;
+  if (overflow) nextTick(applyGridHorizontalScrollbarThumbStyle);
+}
+
+function setGridVerticalOverflow(overflow: boolean) {
+  if (hasGridVerticalOverflow.value === overflow) return;
+  hasGridVerticalOverflow.value = overflow;
+  if (overflow) nextTick(applyGridVerticalScrollbarThumbStyle);
+}
+
+function applyGridHorizontalScrollbarThumbStyle(): boolean {
+  const thumb = gridHorizontalScrollbarThumbRef.value;
+  if (!thumb) return false;
+  // Scroll thumb position changes on every drag frame; update it outside Vue's
+  // render path so large result grids do not re-render while the user drags.
+  thumb.style.width = `${gridHorizontalScrollbarThumbWidthPercent}%`;
+  thumb.style.left = `${gridHorizontalScrollbarThumbLeftPercent}%`;
+  return true;
+}
+
+function applyGridVerticalScrollbarThumbStyle(): boolean {
+  const thumb = gridVerticalScrollbarThumbRef.value;
+  if (!thumb) return false;
+  thumb.style.height = `${gridVerticalScrollbarThumbHeightPercent}%`;
+  thumb.style.top = `${gridVerticalScrollbarThumbTopPercent}%`;
+  return true;
+}
+
+function setGridHorizontalScrollbarDragging(dragging: boolean) {
+  gridHorizontalScrollbarTrackRef.value?.classList.toggle(GRID_HORIZONTAL_SCROLLBAR_DRAGGING_CLASS, dragging);
+}
+
+function setGridVerticalScrollbarDragging(dragging: boolean) {
+  gridVerticalScrollbarTrackRef.value?.classList.toggle(GRID_VERTICAL_SCROLLBAR_DRAGGING_CLASS, dragging);
 }
 
 function scheduleGridHorizontalScrollbarUpdate() {
@@ -2822,7 +2873,7 @@ function applyPendingGridHorizontalScrollbarDrag() {
   const dragState = gridHorizontalScrollbarDragState;
   if (!dragState) return;
 
-  const thumbWidthPx = dragState.trackRect.width * (gridHorizontalScrollbarThumbWidthPercent.value / 100);
+  const thumbWidthPx = dragState.trackRect.width * (gridHorizontalScrollbarThumbWidthPercent / 100);
   const maxThumbLeftPx = Math.max(1, dragState.trackRect.width - thumbWidthPx);
   const thumbLeftPx = Math.min(maxThumbLeftPx, Math.max(0, gridHorizontalScrollbarPendingClientX - dragState.trackRect.left - dragState.thumbOffsetPx));
   const scroller = dragState.scroller;
@@ -2859,7 +2910,7 @@ function stopGridHorizontalScrollbarDrag() {
   if (!gridHorizontalScrollbarDragState) return;
   flushGridHorizontalScrollbarDrag();
   gridHorizontalScrollbarDragState = null;
-  gridHorizontalScrollbarDragging.value = false;
+  setGridHorizontalScrollbarDragging(false);
   window.removeEventListener("pointermove", onGridHorizontalScrollbarPointerMove, true);
   window.removeEventListener("pointerup", stopGridHorizontalScrollbarDrag, true);
   window.removeEventListener("pointercancel", stopGridHorizontalScrollbarDrag, true);
@@ -2870,7 +2921,7 @@ function stopGridVerticalScrollbarDrag() {
   if (!gridVerticalScrollbarDragState) return;
   flushGridVerticalScrollbarDrag();
   gridVerticalScrollbarDragState = null;
-  gridVerticalScrollbarDragging.value = false;
+  setGridVerticalScrollbarDragging(false);
   window.removeEventListener("pointermove", onGridVerticalScrollbarPointerMove, true);
   window.removeEventListener("pointerup", stopGridVerticalScrollbarDrag, true);
   window.removeEventListener("pointercancel", stopGridVerticalScrollbarDrag, true);
@@ -2885,8 +2936,8 @@ function startGridHorizontalScrollbarDrag(event: PointerEvent) {
   const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
   if (maxScrollLeft <= 1) return;
   const trackRect = track.getBoundingClientRect();
-  const thumbLeftPx = trackRect.width * (gridHorizontalScrollbarThumbLeftPercent.value / 100);
-  const thumbWidthPx = trackRect.width * (gridHorizontalScrollbarThumbWidthPercent.value / 100);
+  const thumbLeftPx = trackRect.width * (gridHorizontalScrollbarThumbLeftPercent / 100);
+  const thumbWidthPx = trackRect.width * (gridHorizontalScrollbarThumbWidthPercent / 100);
   const pointerX = event.clientX - trackRect.left;
   const pointerInsideThumb = pointerX >= thumbLeftPx && pointerX <= thumbLeftPx + thumbWidthPx;
 
@@ -2896,7 +2947,7 @@ function startGridHorizontalScrollbarDrag(event: PointerEvent) {
     thumbOffsetPx: pointerInsideThumb ? pointerX - thumbLeftPx : thumbWidthPx / 2,
     maxScrollLeft,
   };
-  gridHorizontalScrollbarDragging.value = true;
+  setGridHorizontalScrollbarDragging(true);
   document.body.style.userSelect = "none";
   window.addEventListener("pointermove", onGridHorizontalScrollbarPointerMove, true);
   window.addEventListener("pointerup", stopGridHorizontalScrollbarDrag, true);
@@ -2910,7 +2961,7 @@ function applyPendingGridVerticalScrollbarDrag() {
   const dragState = gridVerticalScrollbarDragState;
   if (!dragState) return;
 
-  const thumbHeightPx = dragState.trackRect.height * (gridVerticalScrollbarThumbHeightPercent.value / 100);
+  const thumbHeightPx = dragState.trackRect.height * (gridVerticalScrollbarThumbHeightPercent / 100);
   const maxThumbTopPx = Math.max(1, dragState.trackRect.height - thumbHeightPx);
   const thumbTopPx = Math.min(maxThumbTopPx, Math.max(0, gridVerticalScrollbarPendingClientY - dragState.trackRect.top - dragState.thumbOffsetPx));
   const scroller = dragState.scroller;
@@ -2951,8 +3002,8 @@ function startGridVerticalScrollbarDrag(event: PointerEvent) {
   const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
   if (maxScrollTop <= 1) return;
   const trackRect = track.getBoundingClientRect();
-  const thumbTopPx = trackRect.height * (gridVerticalScrollbarThumbTopPercent.value / 100);
-  const thumbHeightPx = trackRect.height * (gridVerticalScrollbarThumbHeightPercent.value / 100);
+  const thumbTopPx = trackRect.height * (gridVerticalScrollbarThumbTopPercent / 100);
+  const thumbHeightPx = trackRect.height * (gridVerticalScrollbarThumbHeightPercent / 100);
   const pointerY = event.clientY - trackRect.top;
   const pointerInsideThumb = pointerY >= thumbTopPx && pointerY <= thumbTopPx + thumbHeightPx;
 
@@ -2962,7 +3013,7 @@ function startGridVerticalScrollbarDrag(event: PointerEvent) {
     thumbOffsetPx: pointerInsideThumb ? pointerY - thumbTopPx : thumbHeightPx / 2,
     maxScrollTop,
   };
-  gridVerticalScrollbarDragging.value = true;
+  setGridVerticalScrollbarDragging(true);
   document.body.style.userSelect = "none";
   window.addEventListener("pointermove", onGridVerticalScrollbarPointerMove, true);
   window.addEventListener("pointerup", stopGridVerticalScrollbarDrag, true);
@@ -2970,16 +3021,6 @@ function startGridVerticalScrollbarDrag(event: PointerEvent) {
   event.preventDefault();
   scheduleGridVerticalScrollbarDrag(event.clientY);
 }
-
-const gridHorizontalScrollbarThumbStyle = computed<CSSProperties>(() => ({
-  width: `${gridHorizontalScrollbarThumbWidthPercent.value}%`,
-  left: `${gridHorizontalScrollbarThumbLeftPercent.value}%`,
-}));
-
-const gridVerticalScrollbarThumbStyle = computed<CSSProperties>(() => ({
-  height: `${gridVerticalScrollbarThumbHeightPercent.value}%`,
-  top: `${gridVerticalScrollbarThumbTopPercent.value}%`,
-}));
 
 function updateGridScrollbarGutter(element: HTMLElement) {
   gridScrollbarGutter.value = scrollbarGutterWidth(element);
@@ -9913,11 +9954,11 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                 <Loader2 class="w-3 h-3 animate-spin mr-1" />
                 {{ t("grid.loadingMore") }}
               </div>
-              <div v-if="hasGridHorizontalOverflow" ref="gridHorizontalScrollbarTrackRef" class="data-grid-horizontal-scrollbar" :class="{ 'data-grid-horizontal-scrollbar--dragging': gridHorizontalScrollbarDragging }" @pointerdown="startGridHorizontalScrollbarDrag">
-                <div class="data-grid-horizontal-scrollbar__thumb" :style="gridHorizontalScrollbarThumbStyle" />
+              <div v-if="hasGridHorizontalOverflow" ref="gridHorizontalScrollbarTrackRef" class="data-grid-horizontal-scrollbar" @pointerdown="startGridHorizontalScrollbarDrag">
+                <div ref="gridHorizontalScrollbarThumbRef" class="data-grid-horizontal-scrollbar__thumb" />
               </div>
-              <div v-if="hasGridVerticalOverflow" ref="gridVerticalScrollbarTrackRef" class="data-grid-vertical-scrollbar" :class="{ 'data-grid-vertical-scrollbar--dragging': gridVerticalScrollbarDragging }" @pointerdown="startGridVerticalScrollbarDrag">
-                <div class="data-grid-vertical-scrollbar__thumb" :style="gridVerticalScrollbarThumbStyle" />
+              <div v-if="hasGridVerticalOverflow" ref="gridVerticalScrollbarTrackRef" class="data-grid-vertical-scrollbar" @pointerdown="startGridVerticalScrollbarDrag">
+                <div ref="gridVerticalScrollbarThumbRef" class="data-grid-vertical-scrollbar__thumb" />
               </div>
               <div v-if="loading" class="absolute inset-0 z-20 bg-background/50 flex items-center justify-center">
                 <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background border shadow-sm text-xs text-muted-foreground">
