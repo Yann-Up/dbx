@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { uuid } from "@/lib/common/utils";
-import { markRaw, ref, watch, computed } from "vue";
+import { computed, markRaw, onScopeDispose, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ConnectionConfig, DatabaseType, ObjectBrowserViewport, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
 import { orderPinnedFirst } from "@/lib/app/pinnedItems";
@@ -998,6 +998,11 @@ export const useQueryStore = defineStore("query", () => {
     },
     { flush: "post" },
   );
+
+  onScopeDispose(() => {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = null;
+  });
 
   // Immediately flush any pending debounced persist so the on-disk content
   // reflects the latest in-memory tabs without waiting for the 300ms debounce.
