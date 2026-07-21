@@ -3529,6 +3529,8 @@ export default {
     fontSize: "Font Size",
     toolbarTitle: "Toolbar",
     toolbarHiddenHint: 'Some hidden or overflowed buttons appear in the "More" dropdown.',
+    exclusiveRightSidebarPanels: "Show one right sidebar panel at a time",
+    exclusiveRightSidebarPanelsDescription: "Opening a right sidebar panel closes the others. Disable this to allow multiple panels.",
     uiScale: "UI Scale",
     uiScaleDescription: "Scale the entire desktop UI for high-DPI displays. Changes apply immediately and are restored on next launch.",
     theme: "Theme",

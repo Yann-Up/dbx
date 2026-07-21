@@ -3519,6 +3519,8 @@ export default withEnglishFallback({
     fontSize: "字号",
     toolbarTitle: "工具栏",
     toolbarHiddenHint: '部分关闭或空间不足的按钮会自动收进"更多"下拉菜单。',
+    exclusiveRightSidebarPanels: "右侧边栏一次仅显示一个面板",
+    exclusiveRightSidebarPanelsDescription: "打开一个右侧面板时关闭其他面板。关闭此选项可同时显示多个面板。",
     uiScale: "界面缩放",
     uiScaleDescription: "按比例缩放整个桌面端界面，适合高清屏；修改后立即生效，并在下次启动时恢复。",
     theme: "主题",
