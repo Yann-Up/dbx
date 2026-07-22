@@ -677,6 +677,36 @@ export async function deleteAiConversation(id: string): Promise<void> {
   return invoke("delete_ai_conversation", { id });
 }
 
+// --- Prompt Templates ---
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function loadPromptTemplates(): Promise<PromptTemplate[]> {
+  return invoke("load_prompt_templates");
+}
+
+export async function savePromptTemplate(id: string, name: string, content: string): Promise<PromptTemplate> {
+  return invoke("save_prompt_template", { id, name, content });
+}
+
+export async function deletePromptTemplate(id: string): Promise<void> {
+  return invoke("delete_prompt_template", { id });
+}
+
+export async function getAiGlobalCustomInstructions(): Promise<string> {
+  return invoke("get_ai_global_custom_instructions");
+}
+
+export async function setAiGlobalCustomInstructions(content: string): Promise<void> {
+  return invoke("set_ai_global_custom_instructions", { content });
+}
+
 export async function testConnection(config: ConnectionConfig): Promise<string> {
   return invoke("test_connection", { config });
 }
@@ -801,8 +831,8 @@ export async function listSchemaInfos(connectionId: string, database: string): P
   return invoke("list_schema_infos", { connectionId, database });
 }
 
-export async function getColumns(connectionId: string, database: string, schema: string, table: string, catalog?: string): Promise<ColumnInfo[]> {
-  return invoke("get_columns", { connectionId, database, schema, table, catalog });
+export async function getColumns(connectionId: string, database: string, schema: string, table: string, catalog?: string, clientSessionId?: string): Promise<ColumnInfo[]> {
+  return invoke("get_columns", { connectionId, database, schema, table, catalog, clientSessionId });
 }
 
 export async function getSqlServerColumnMetadata(connectionId: string, database: string, schema: string, table: string): Promise<SqlServerColumnMetadata[]> {
@@ -1341,12 +1371,14 @@ export async function importAgentsFromZip(path: string | File): Promise<number> 
   return invoke("import_agents_from_zip", { path });
 }
 
-export async function importAgentJar(dbType: string, path: string | File): Promise<void> {
+export async function importAgentDriver(dbType: string, path: string | File): Promise<void> {
   if (typeof path !== "string") {
-    throw new Error("Desktop driver JAR import requires a local file path");
+    throw new Error("Desktop driver import requires a local file path");
   }
-  return invoke("import_agent_jar_cmd", { dbType, path });
+  return invoke("import_agent_driver_cmd", { dbType, path });
 }
+
+export const importAgentJar = importAgentDriver;
 
 export async function reinstallJre(jreKey?: string, source?: UpdateDownloadSource): Promise<void> {
   return invoke("reinstall_jre", { jreKey, source });
@@ -1447,6 +1479,7 @@ export interface McpServerStatus {
   latest_version: string | null;
   update_available: boolean;
   bin_path: string | null;
+  native_bin_path: string | null;
   script_path: string | null;
   install_command: string;
   update_command: string;
@@ -1461,8 +1494,8 @@ export async function installMcpServer(): Promise<string> {
   return invoke("install_mcp_server");
 }
 
-export async function checkForUpdates(locale?: string): Promise<UpdateInfo> {
-  return invoke("check_for_updates", { locale });
+export async function checkForUpdates(locale?: string, source?: UpdateDownloadSource): Promise<UpdateInfo> {
+  return invoke("check_for_updates", { locale, source });
 }
 
 export async function fetchChangelog(lang?: string): Promise<import("@/lib/app/changelog").ChangelogData> {
@@ -1870,6 +1903,10 @@ export async function mongoDropCollection(connectionId: string, database: string
   return invoke("mongo_drop_collection", { connectionId, database, collection });
 }
 
+export async function mongoRenameCollection(connectionId: string, database: string, collection: string, newName: string): Promise<void> {
+  return invoke("mongo_rename_collection", { connectionId, database, collection, newName });
+}
+
 export async function elasticsearchListIndices(connectionId: string): Promise<string[]> {
   const collections = await documentListCollections(connectionId, "default");
   return collections.map((c) => c.name);
@@ -2044,12 +2081,56 @@ export interface HistoryEntry {
   details_json?: string | null;
 }
 
+export interface HistoryConnectionFilter {
+  connection_id: string;
+  connection_name: string;
+}
+
+export interface HistoryDatabaseFilter extends HistoryConnectionFilter {
+  database: string;
+}
+
+export interface HistoryCursor {
+  executed_at: string;
+  id: string;
+}
+
+export interface HistorySearchRequest {
+  search_text: string;
+  connections: HistoryConnectionFilter[];
+  databases: HistoryDatabaseFilter[];
+  activity_kind?: string;
+  success?: boolean;
+  started_at?: string;
+  ended_at?: string;
+  cursor?: HistoryCursor;
+  limit: number;
+}
+
+export interface HistorySearchResult {
+  entries: HistoryEntry[];
+  next_cursor?: HistoryCursor | null;
+  total: number;
+}
+
+export interface HistoryConnectionOption extends HistoryConnectionFilter {
+  databases: string[];
+}
+
 export async function saveHistory(entry: HistoryEntry): Promise<void> {
   return invoke("save_history", { entry });
 }
 
 export async function loadHistory(limit: number, offset: number, activityKind?: string): Promise<HistoryEntry[]> {
   return invoke("load_history", { limit, offset, activityKind: activityKind ?? null });
+}
+
+export async function searchHistory(request: HistorySearchRequest): Promise<HistorySearchResult> {
+  return invoke("search_history", { request });
+}
+
+export async function loadHistoryConnectionOptions(): Promise<HistoryConnectionOption[]> {
+  return invoke("load_history_connection_options");
 }
 
 export async function loadRedisHistory(limit = 100, offset = 0): Promise<HistoryEntry[]> {
@@ -2324,6 +2405,7 @@ export interface DatabaseExportRequest {
   includeData: boolean;
   includeObjects: boolean;
   dropTableIfExists?: boolean;
+  omitAutoIncrement?: boolean;
   failOnError?: boolean;
   snapshotSessionId?: string;
   batchSize: number;
