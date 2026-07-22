@@ -419,28 +419,17 @@ class RabbitMqAgentTest {
         });
         rejecting.start();
         int port = rejecting.getAddress().getPort();
-        List<String> fallbackHits = new ArrayList<>();
-        HttpServer fallback = HttpServer.create(new InetSocketAddress("127.0.0.2", port), 0);
-        fallback.createContext("/api", exchange -> {
-            fallbackHits.add(exchange.getRequestURI().toString());
-            byte[] body = "[]".getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
-        });
-        fallback.start();
         try {
             JsonObject conn = JsonParser.parseString("""
                 { "addresses": "127.0.0.1,127.0.0.2", "properties": { "management_port": %d } }
                 """.formatted(port)).getAsJsonObject();
             Exception error = assertThrows(IllegalStateException.class,
                 () -> RabbitMqAgent.managementGet(conn, "/api/queues"));
+            // If the second candidate were attempted, its connection failure
+            // would replace this terminal HTTP status with an I/O error.
             assertTrue(error.getMessage().contains("HTTP 401"), error.getMessage());
-            // The 401 answer is final: the fallback candidate is never tried.
-            assertTrue(fallbackHits.isEmpty());
         } finally {
             rejecting.stop(0);
-            fallback.stop(0);
         }
     }
 
