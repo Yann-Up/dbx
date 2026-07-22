@@ -63,10 +63,11 @@ impl MqAdminConfig {
         let mut parsed: MqAdminConfig = serde_json::from_value(raw.clone())
             .map_err(|e| format!("Failed to parse message queue admin config: {e}"))?;
         parsed.admin_url = parsed.admin_url.trim().to_string();
-        // Kafka and RocketMQ use namesrv/bootstrap from `extra` instead of an admin URL.
+        // Kafka, RocketMQ and RabbitMQ use namesrv/bootstrap/addresses from `extra` instead of an admin URL.
         if parsed.admin_url.is_empty()
             && parsed.system_kind != MqSystemKind::Kafka
             && parsed.system_kind != MqSystemKind::RocketMq
+            && parsed.system_kind != MqSystemKind::RabbitMq
         {
             return Err("Message queue admin URL is empty".to_string());
         }
@@ -214,6 +215,25 @@ mod tests {
         assert_eq!(mqc.system_kind, MqSystemKind::RocketMq);
         assert_eq!(mqc.admin_url, "");
         assert_eq!(mqc.extra.get("namesrvAddr").and_then(|v| v.as_str()), Some("127.0.0.1:9876"));
+    }
+
+    #[test]
+    fn parses_rabbitmq_config_with_empty_admin_url() {
+        let cfg = connection_with_external(serde_json::json!({
+            "systemKind": "rabbitmq",
+            "adminUrl": "",
+            "auth": { "kind": "basic", "username": "guest", "password": "guest" },
+            "extra": {
+                "addresses": "127.0.0.1",
+                "port": 5672,
+                "virtualHost": "/"
+            }
+        }));
+        let mqc = MqAdminConfig::from_connection(&cfg).expect("should parse valid RabbitMQ config");
+        assert_eq!(mqc.system_kind, MqSystemKind::RabbitMq);
+        assert_eq!(mqc.admin_url, "");
+        assert_eq!(mqc.extra.get("addresses").and_then(|v| v.as_str()), Some("127.0.0.1"));
+        assert_eq!(mqc.extra.get("virtualHost").and_then(|v| v.as_str()), Some("/"));
     }
 
     #[test]

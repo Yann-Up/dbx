@@ -65,6 +65,15 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  /* Aliases for legacy MQ panel styles (used across components/mq/*). */
+  --color-error: var(--destructive);
+  --color-error-bg: color-mix(in srgb, var(--destructive) 10%, transparent);
+  --color-hover: var(--accent);
+  --color-background-secondary: var(--muted);
+  --color-text-secondary: var(--muted-foreground);
+  --color-text-tertiary: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  --color-border-light: color-mix(in srgb, var(--border) 60%, transparent);
+  --color-primary-alpha: color-mix(in srgb, var(--primary) 12%, transparent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);

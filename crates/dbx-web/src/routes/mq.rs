@@ -123,6 +123,53 @@ pub(crate) struct TopicReq {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ListExchangesReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateExchangeReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    name: String,
+    exchange_type: String,
+    #[serde(default)]
+    durable: bool,
+    #[serde(default)]
+    auto_delete: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteExchangeReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListBindingsReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    #[serde(default)]
+    exchange: Option<String>,
+    #[serde(default)]
+    queue: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BindingReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    binding: dbx_core::mq::MqBindingInfo,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CreateSubscriptionReq {
     connection_id: String,
     topic: dbx_core::mq::TopicRef,
@@ -292,6 +339,109 @@ pub(crate) struct BacklogReq {
 pub(crate) struct RawRequestReq {
     connection_id: String,
     req: dbx_core::mq::MqRawRequest,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListClientConnectionsReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListClientChannelsReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    #[serde(default)]
+    connection: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CloseClientConnectionReq {
+    connection_id: String,
+    ns: dbx_core::mq::NamespaceRef,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateUserReq {
+    connection_id: String,
+    name: String,
+    password: String,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UserReq {
+    connection_id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListUserPermissionsReq {
+    connection_id: String,
+    #[serde(default)]
+    virtual_host: Option<String>,
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    all_vhosts: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrantUserPermissionReq {
+    connection_id: String,
+    user: String,
+    virtual_host: String,
+    #[serde(default)]
+    configure: Option<String>,
+    #[serde(default)]
+    write: Option<String>,
+    #[serde(default)]
+    read: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RevokeUserPermissionReq {
+    connection_id: String,
+    user: String,
+    virtual_host: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListPoliciesReq {
+    connection_id: String,
+    virtual_host: Option<String>,
+    all_vhosts: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetPolicyReq {
+    connection_id: String,
+    virtual_host: String,
+    name: String,
+    pattern: String,
+    apply_to: Option<String>,
+    priority: Option<i32>,
+    definition: std::collections::HashMap<String, serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeletePolicyReq {
+    connection_id: String,
+    virtual_host: String,
+    name: String,
 }
 
 // ---- Helper: writable check ----
@@ -469,6 +619,74 @@ pub async fn get_topic_internal_stats(
     Ok(Json(result))
 }
 
+pub async fn list_exchanges(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListExchangesReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqExchangeInfo>>, AppError> {
+    let result = dbx_core::mq::service::mq_list_exchanges_core(&state.app, &req.connection_id, req.ns)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn create_exchange(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<CreateExchangeReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Create exchange").await?;
+    dbx_core::mq::service::mq_create_exchange_core(
+        &state.app,
+        &req.connection_id,
+        req.ns,
+        &req.name,
+        &req.exchange_type,
+        req.durable,
+        req.auto_delete,
+    )
+    .await
+    .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn delete_exchange(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<DeleteExchangeReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Delete exchange").await?;
+    dbx_core::mq::service::mq_delete_exchange_core(&state.app, &req.connection_id, req.ns, &req.name)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn list_bindings(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListBindingsReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqBindingInfo>>, AppError> {
+    let result =
+        dbx_core::mq::service::mq_list_bindings_core(&state.app, &req.connection_id, req.ns, req.exchange, req.queue)
+            .await
+            .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn bind_queue(State(state): State<Arc<WebState>>, Json(req): Json<BindingReq>) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Create binding").await?;
+    dbx_core::mq::service::mq_bind_core(&state.app, &req.connection_id, req.ns, req.binding).await.map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn unbind_queue(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<BindingReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Delete binding").await?;
+    dbx_core::mq::service::mq_unbind_core(&state.app, &req.connection_id, req.ns, req.binding)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(()))
+}
+
 pub async fn list_subscriptions(
     State(state): State<Arc<WebState>>,
     Json(req): Json<TopicReq>,
@@ -620,6 +838,38 @@ pub async fn unload_topic(State(state): State<Arc<WebState>>, Json(req): Json<To
     Ok(Json(()))
 }
 
+pub async fn list_client_connections(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListClientConnectionsReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqClientConnectionInfo>>, AppError> {
+    let result = dbx_core::mq::service::mq_list_client_connections_core(&state.app, &req.connection_id, req.ns)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn list_client_channels(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListClientChannelsReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqChannelInfo>>, AppError> {
+    let result =
+        dbx_core::mq::service::mq_list_client_channels_core(&state.app, &req.connection_id, req.ns, req.connection)
+            .await
+            .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn close_client_connection(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<CloseClientConnectionReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Close client connection").await?;
+    dbx_core::mq::service::mq_close_client_connection_core(&state.app, &req.connection_id, req.ns, &req.name)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(()))
+}
+
 pub async fn set_publish_rate(
     State(state): State<Arc<WebState>>,
     Json(req): Json<SetPublishRateReq>,
@@ -714,6 +964,153 @@ pub async fn list_permissions(
     let result = dbx_core::mq::service::mq_list_permissions_core(&state.app, &req.connection_id, req.scope)
         .await
         .map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn list_users(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ConnReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqUserInfo>>, AppError> {
+    let result = dbx_core::mq::service::mq_list_users_core(&state.app, &req.connection_id).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn create_user(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<CreateUserReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Create user").await?;
+    dbx_core::mq::service::mq_create_user_core(
+        &state.app,
+        &req.connection_id,
+        &req.name,
+        &req.password,
+        req.tags.unwrap_or_default(),
+    )
+    .await
+    .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn delete_user(State(state): State<Arc<WebState>>, Json(req): Json<UserReq>) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Delete user").await?;
+    dbx_core::mq::service::mq_delete_user_core(&state.app, &req.connection_id, &req.name).await.map_err(AppError)?;
+    Ok(Json(()))
+}
+
+/// RabbitMQ user permissions live under the synthetic `_rabbitmq` tenant;
+/// `*` is the all-vhosts marker and is only meaningful for listings.
+fn user_permission_ns(virtual_host: Option<String>, all_vhosts: Option<bool>) -> dbx_core::mq::NamespaceRef {
+    let namespace = match (all_vhosts.unwrap_or(false), virtual_host) {
+        (true, _) => "*".to_string(),
+        (false, Some(vhost)) if !vhost.trim().is_empty() => vhost,
+        _ => "*".to_string(),
+    };
+    dbx_core::mq::NamespaceRef { tenant: "_rabbitmq".to_string(), namespace }
+}
+
+pub async fn list_user_permissions(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListUserPermissionsReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqVhostPermission>>, AppError> {
+    let ns = user_permission_ns(req.virtual_host, req.all_vhosts);
+    let mut permissions = dbx_core::mq::service::mq_list_user_permissions_core(&state.app, &req.connection_id, ns)
+        .await
+        .map_err(AppError)?;
+    if let Some(user) = req.user {
+        permissions.retain(|p| p.user == user);
+    }
+    Ok(Json(permissions))
+}
+
+pub async fn grant_user_permission(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<GrantUserPermissionReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Grant user permission").await?;
+    let ns = user_permission_ns(Some(req.virtual_host), None);
+    let all = || ".*".to_string();
+    dbx_core::mq::service::mq_grant_user_permission_core(
+        &state.app,
+        &req.connection_id,
+        ns,
+        &req.user,
+        &req.configure.unwrap_or_else(all),
+        &req.write.unwrap_or_else(all),
+        &req.read.unwrap_or_else(all),
+    )
+    .await
+    .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn revoke_user_permission(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<RevokeUserPermissionReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Revoke user permission").await?;
+    let ns = user_permission_ns(Some(req.virtual_host), None);
+    dbx_core::mq::service::mq_revoke_user_permission_core(&state.app, &req.connection_id, ns, &req.user)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+// ---- Policies & cluster monitoring (RabbitMQ) ----
+
+pub async fn list_policies(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ListPoliciesReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqPolicyInfo>>, AppError> {
+    let ns = user_permission_ns(req.virtual_host, req.all_vhosts);
+    let result =
+        dbx_core::mq::service::mq_list_policies_core(&state.app, &req.connection_id, ns).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn set_policy(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<SetPolicyReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Set policy").await?;
+    let ns = user_permission_ns(Some(req.virtual_host.clone()), None);
+    let policy = dbx_core::mq::MqPolicyInfo {
+        name: req.name,
+        vhost: req.virtual_host,
+        pattern: req.pattern,
+        apply_to: req.apply_to.unwrap_or_default(),
+        priority: req.priority.unwrap_or(0),
+        definition: req.definition,
+    };
+    dbx_core::mq::service::mq_set_policy_core(&state.app, &req.connection_id, ns, policy).await.map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn delete_policy(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<DeletePolicyReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_writable(&state.app, &req.connection_id, "Delete policy").await?;
+    let ns = user_permission_ns(Some(req.virtual_host), None);
+    dbx_core::mq::service::mq_delete_policy_core(&state.app, &req.connection_id, ns, &req.name)
+        .await
+        .map_err(AppError)?;
+    Ok(Json(()))
+}
+
+pub async fn get_overview(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ConnReq>,
+) -> Result<Json<dbx_core::mq::MqOverviewInfo>, AppError> {
+    let result = dbx_core::mq::service::mq_get_overview_core(&state.app, &req.connection_id).await.map_err(AppError)?;
+    Ok(Json(result))
+}
+
+pub async fn list_nodes(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<ConnReq>,
+) -> Result<Json<Vec<dbx_core::mq::MqNodeInfo>>, AppError> {
+    let result = dbx_core::mq::service::mq_list_nodes_core(&state.app, &req.connection_id).await.map_err(AppError)?;
     Ok(Json(result))
 }
 
