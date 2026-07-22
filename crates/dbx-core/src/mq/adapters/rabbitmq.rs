@@ -162,11 +162,13 @@ impl MessageQueueAdmin for RabbitMqAdmin {
     }
 
     async fn create_namespace(&self, ns: &NamespaceRef, _cfg: NamespaceConfig) -> Result<(), String> {
-        self.call_ok("mq_create_namespace", serde_json::json!({ "namespace": ns.namespace })).await
+        let vhost = namespace_vhost_name(&ns.namespace)?;
+        self.call_ok("mq_create_namespace", serde_json::json!({ "namespace": vhost })).await
     }
 
     async fn delete_namespace(&self, ns: &NamespaceRef, _force: bool) -> Result<(), String> {
-        self.call_ok("mq_delete_namespace", serde_json::json!({ "namespace": ns.namespace })).await
+        let vhost = namespace_vhost_name(&ns.namespace)?;
+        self.call_ok("mq_delete_namespace", serde_json::json!({ "namespace": vhost })).await
     }
 
     async fn get_namespace_policies(&self, _ns: &NamespaceRef) -> Result<serde_json::Value, String> {
@@ -763,6 +765,16 @@ fn require_specific_vhost(namespace: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Vhost name for namespace create/delete: these address a specific vhost by
+/// name, so the all-vhosts marker and synthetic/empty namespaces are invalid.
+fn namespace_vhost_name(namespace: &str) -> Result<&str, String> {
+    require_specific_vhost(namespace)?;
+    if namespace.trim().is_empty() || namespace.starts_with('_') {
+        return Err(format!("namespace create/delete requires a real virtual host name, got {namespace:?}"));
+    }
+    Ok(namespace)
+}
+
 /// Build the JSON-RPC params for `mq_bind` / `mq_unbind` from a binding. The
 /// serialized `MqBindingInfo` already matches the agent contract
 /// (`source`/`destination`/`destinationType`/`routingKey`/`arguments`). A
@@ -1296,6 +1308,16 @@ mod tests {
         for ns in ["orders", "_rabbitmq", "_flat_mq", ""] {
             assert!(require_specific_vhost(ns).is_ok(), "namespace {ns:?} must be allowed");
         }
+    }
+
+    #[test]
+    fn namespace_vhost_name_rejects_star_and_synthetic_namespaces() {
+        assert!(namespace_vhost_name("*").is_err(), "create/delete must reject the all-vhosts marker");
+        assert!(namespace_vhost_name("").is_err());
+        assert!(namespace_vhost_name("_rabbitmq").is_err());
+        assert!(namespace_vhost_name("_flat_mq").is_err());
+        assert_eq!(namespace_vhost_name("/").expect("root vhost"), "/");
+        assert_eq!(namespace_vhost_name("orders").expect("named vhost"), "orders");
     }
 
     #[test]

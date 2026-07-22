@@ -892,6 +892,26 @@ class RabbitMqAgentTest {
     }
 
     @Test
+    void createNamespaceRejectsAllVhostsMarker() {
+        String response = RabbitMqAgent.handleRequest("""
+            { "jsonrpc": "2.0", "id": 14, "method": "mq_create_namespace", "params": { "namespace": "*" } }
+            """);
+        JsonObject error = JsonParser.parseString(response).getAsJsonObject().getAsJsonObject("error");
+        assertEquals(-1, error.get("code").getAsInt());
+        assertTrue(error.get("message").getAsString().contains("all-vhosts"));
+    }
+
+    @Test
+    void deleteNamespaceRejectsAllVhostsMarker() {
+        String response = RabbitMqAgent.handleRequest("""
+            { "jsonrpc": "2.0", "id": 15, "method": "mq_delete_namespace", "params": { "namespace": "*" } }
+            """);
+        JsonObject error = JsonParser.parseString(response).getAsJsonObject().getAsJsonObject("error");
+        assertEquals(-1, error.get("code").getAsInt());
+        assertTrue(error.get("message").getAsString().contains("all-vhosts"));
+    }
+
+    @Test
     void deleteNamespaceRejectsDefaultVhost() {
         String response = RabbitMqAgent.handleRequest("""
             { "jsonrpc": "2.0", "id": 15, "method": "mq_delete_namespace", "params": { "namespace": "/" } }

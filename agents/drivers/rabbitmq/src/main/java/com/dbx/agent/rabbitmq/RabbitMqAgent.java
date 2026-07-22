@@ -639,6 +639,11 @@ public final class RabbitMqAgent {
         if (name.isBlank()) {
             throw new IllegalArgumentException("namespace is required");
         }
+        // '*' is the all-vhosts marker used by listings, never a real vhost name;
+        // without this guard a create/delete would address /api/vhosts/%2A.
+        if ("*".equals(name.trim())) {
+            throw new IllegalArgumentException("namespace create/delete requires a specific virtual host (all-vhosts context)");
+        }
         return name;
     }
 
