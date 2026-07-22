@@ -237,6 +237,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_rabbitmq_config_with_management_admin_url() {
+        // An explicit management URL stays untouched: it may carry a reverse
+        // proxy path prefix, and no http(s)-only scheme restriction applies.
+        let cfg = connection_with_external(serde_json::json!({
+            "systemKind": "rabbitmq",
+            "adminUrl": "http://rabbit.internal:15672/proxy",
+            "auth": { "kind": "basic", "username": "guest", "password": "guest" },
+            "extra": {
+                "addresses": "127.0.0.1",
+                "port": 5672,
+                "virtualHost": "/"
+            }
+        }));
+        let mqc = MqAdminConfig::from_connection(&cfg).expect("should parse RabbitMQ config with a management URL");
+        assert_eq!(mqc.system_kind, MqSystemKind::RabbitMq);
+        assert_eq!(mqc.admin_url, "http://rabbit.internal:15672/proxy");
+        assert_eq!(mqc.extra.get("addresses").and_then(|v| v.as_str()), Some("127.0.0.1"));
+    }
+
+    #[test]
     fn admin_url_with_endpoint_preserves_scheme_path_and_query() {
         let rewritten =
             admin_url_with_endpoint("https://broker.internal:8443/pulsar-admin?tenant=public", "127.0.0.1", 49152)

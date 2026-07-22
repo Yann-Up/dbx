@@ -850,27 +850,39 @@ fn extra_port(extra: &serde_json::Value) -> Result<u16, String> {
 }
 
 /// Build the connection params JSON from MqAdminConfig for the Java agent.
+/// Blank credentials are omitted so the agent falls back to its guest/guest
+/// default instead of authenticating as `:`. A non-empty `admin_url` is
+/// forwarded as `management_url`; otherwise the agent derives the management
+/// endpoint from the AMQP addresses itself.
 fn build_connection_params(cfg: &MqAdminConfig) -> Result<serde_json::Value, String> {
     let extra = &cfg.extra;
     let basic_auth = match &cfg.auth {
         MqAuth::Basic { username, password } => Some((username.as_str(), password.as_str())),
         _ => None,
     };
-    let username = extra_str(extra, "username").or_else(|| basic_auth.map(|(username, _)| username)).unwrap_or("");
-    let password = extra_str(extra, "password").or_else(|| basic_auth.map(|(_, password)| password)).unwrap_or("");
+    let username = extra_str(extra, "username").or_else(|| basic_auth.map(|(username, _)| username));
+    let password = extra_str(extra, "password").or_else(|| basic_auth.map(|(_, password)| password));
     let virtual_host = extra_str(extra, "virtualHost").or_else(|| extra_str(extra, "virtual_host")).unwrap_or("/");
     let properties =
         extra.get("properties").filter(|value| value.is_object()).cloned().unwrap_or_else(|| serde_json::json!({}));
 
-    Ok(serde_json::json!({
+    let mut params = serde_json::json!({
         "addresses": addresses(cfg),
         "port": extra_port(extra)?,
-        "username": username,
-        "password": password,
         "virtual_host": virtual_host,
         "tls_skip_verify": cfg.tls_skip_verify,
         "properties": properties,
-    }))
+    });
+    if let Some(username) = username.filter(|value| !value.trim().is_empty()) {
+        params["username"] = serde_json::json!(username);
+    }
+    if let Some(password) = password.filter(|value| !value.trim().is_empty()) {
+        params["password"] = serde_json::json!(password);
+    }
+    if !cfg.admin_url.trim().is_empty() {
+        params["management_url"] = serde_json::json!(cfg.admin_url);
+    }
+    Ok(params)
 }
 
 /// Map one agent peek message JSON to a `PeekedMessage`.
@@ -966,10 +978,15 @@ mod tests {
 
         assert_eq!(params.get("addresses").and_then(|v| v.as_str()), Some("localhost"));
         assert_eq!(params.get("port").and_then(|v| v.as_u64()), Some(5672));
-        assert_eq!(params.get("username").and_then(|v| v.as_str()), Some(""));
-        assert_eq!(params.get("password").and_then(|v| v.as_str()), Some(""));
+        // Blank credentials are omitted so the agent applies its guest/guest
+        // fallback instead of authenticating as ':'.
+        assert!(params.get("username").is_none());
+        assert!(params.get("password").is_none());
         assert_eq!(params.get("virtual_host").and_then(|v| v.as_str()), Some("/"));
         assert_eq!(params.get("tls_skip_verify").and_then(|v| v.as_bool()), Some(false));
+        // Without an explicit admin URL the agent derives the management
+        // endpoint from the AMQP addresses.
+        assert!(params.get("management_url").is_none());
     }
 
     #[test]
@@ -990,6 +1007,37 @@ mod tests {
         assert_eq!(params.get("port").and_then(|v| v.as_u64()), Some(5673));
         assert_eq!(params.get("username").and_then(|v| v.as_str()), Some("bob"));
         assert_eq!(params.get("password").and_then(|v| v.as_str()), Some("pw"));
+    }
+
+    #[test]
+    fn connection_params_omit_whitespace_only_credentials() {
+        let cfg = rabbitmq_config(
+            serde_json::json!({ "addresses": "broker" }),
+            MqAuth::Basic { username: "   ".to_string(), password: "\t".to_string() },
+            false,
+        );
+
+        let params = build_connection_params(&cfg).expect("connection params");
+
+        assert!(params.get("username").is_none());
+        assert!(params.get("password").is_none());
+    }
+
+    #[test]
+    fn connection_params_forward_admin_url_as_management_url() {
+        // An explicit management URL (e.g. behind a reverse proxy with a path
+        // prefix) is forwarded as-is so the agent does not derive it from the
+        // AMQP addresses.
+        let mut cfg = rabbitmq_config(
+            serde_json::json!({ "addresses": "broker" }),
+            MqAuth::Basic { username: "alice".to_string(), password: "secret".to_string() },
+            false,
+        );
+        cfg.admin_url = "http://rabbit.internal:15672/proxy".to_string();
+
+        let params = build_connection_params(&cfg).expect("connection params");
+
+        assert_eq!(params.get("management_url").and_then(|v| v.as_str()), Some("http://rabbit.internal:15672/proxy"));
     }
 
     #[test]

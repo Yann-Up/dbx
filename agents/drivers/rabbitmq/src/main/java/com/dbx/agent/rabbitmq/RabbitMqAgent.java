@@ -14,6 +14,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -270,8 +271,8 @@ public final class RabbitMqAgent {
 
     static ConnectionFactory buildConnectionFactory(JsonObject conn) throws Exception {
         ConnectionFactory factory = new ConnectionFactory();
-        factory.setUsername(stringOrDefault(conn, "username", "guest"));
-        factory.setPassword(stringOrDefault(conn, "password", "guest"));
+        factory.setUsername(credentialOrGuest(conn, "username"));
+        factory.setPassword(credentialOrGuest(conn, "password"));
         factory.setVirtualHost(stringOrDefault(conn, "virtual_host", "/"));
         factory.setConnectionTimeout(intOrDefault(conn, "request_timeout_ms", DEFAULT_REQUEST_TIMEOUT_MS));
         applyTlsSettings(conn, factory);
@@ -397,13 +398,10 @@ public final class RabbitMqAgent {
     private static Object listTopics(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
         boolean allVhosts = allVhostsRequested(params);
-        JsonElement queues = managementGet(conn, managementListPath(params, conn, "queues"));
-        if (!queues.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for queue listing");
-        }
+        JsonArray queues = managementGetAll(conn, managementListPath(params, conn, "queues"));
 
         List<Map<String, Object>> topics = new ArrayList<>();
-        for (JsonElement element : queues.getAsJsonArray()) {
+        for (JsonElement element : queues) {
             JsonObject queue = element.getAsJsonObject();
             Map<String, Object> topic = new LinkedHashMap<>();
             topic.put("name", stringOrEmpty(queue, "name"));
@@ -653,13 +651,10 @@ public final class RabbitMqAgent {
     private static Object listExchanges(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
         boolean allVhosts = allVhostsRequested(params);
-        JsonElement exchanges = managementGet(conn, managementListPath(params, conn, "exchanges"));
-        if (!exchanges.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for exchange listing");
-        }
+        JsonArray exchanges = managementGetAll(conn, managementListPath(params, conn, "exchanges"));
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : exchanges.getAsJsonArray()) {
+        for (JsonElement element : exchanges) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -750,15 +745,12 @@ public final class RabbitMqAgent {
     private static Object listBindings(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
         boolean allVhosts = allVhostsRequested(params);
-        JsonElement bindings = managementGet(conn, managementListPath(params, conn, "bindings"));
-        if (!bindings.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for binding listing");
-        }
+        JsonArray bindings = managementGetAll(conn, managementListPath(params, conn, "bindings"));
         String exchange = stringOrEmpty(params, "exchange");
         String queue = stringOrEmpty(params, "queue");
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : bindings.getAsJsonArray()) {
+        for (JsonElement element : bindings) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -879,15 +871,12 @@ public final class RabbitMqAgent {
 
     private static Object listClientConnections(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
-        JsonElement connections = managementGet(conn, "/api/connections");
-        if (!connections.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for connection listing");
-        }
+        JsonArray connections = managementGetAll(conn, "/api/connections");
         boolean allVhosts = allVhostsRequested(params);
         String vhostFilter = vhostFilter(params, conn);
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : connections.getAsJsonArray()) {
+        for (JsonElement element : connections) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -945,16 +934,13 @@ public final class RabbitMqAgent {
 
     private static Object listClientChannels(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
-        JsonElement channels = managementGet(conn, "/api/channels");
-        if (!channels.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for channel listing");
-        }
+        JsonArray channels = managementGetAll(conn, "/api/channels");
         String connectionFilter = stringOrEmpty(params, "connection");
         boolean allVhosts = allVhostsRequested(params);
         String vhostFilter = vhostFilter(params, conn);
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : channels.getAsJsonArray()) {
+        for (JsonElement element : channels) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -1040,13 +1026,10 @@ public final class RabbitMqAgent {
 
     private static Object listUsers(JsonObject params) throws Exception {
         JsonObject conn = requireConnectionConfig(params);
-        JsonElement users = managementGet(conn, "/api/users");
-        if (!users.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for user listing");
-        }
+        JsonArray users = managementGetAll(conn, "/api/users");
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : users.getAsJsonArray()) {
+        for (JsonElement element : users) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -1251,14 +1234,11 @@ public final class RabbitMqAgent {
         // Accept the '*' all-vhosts sentinel as a synonym for all_vhosts=true;
         // both select the vhost-less management API variant.
         boolean allVhosts = allVhostsRequested(params) || "*".equals(stringOrEmpty(params, "virtual_host"));
-        JsonElement policies = managementGet(conn, allVhosts ? "/api/policies"
+        JsonArray policies = managementGetAll(conn, allVhosts ? "/api/policies"
             : "/api/policies/" + urlEncodeVhost(effectiveVhost(params, conn)));
-        if (!policies.isJsonArray()) {
-            throw new IllegalStateException("Unexpected management API response for policy listing");
-        }
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (JsonElement element : policies.getAsJsonArray()) {
+        for (JsonElement element : policies) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -1640,15 +1620,29 @@ public final class RabbitMqAgent {
     }
 
     static JsonElement managementRequest(JsonObject conn, String method, String path, JsonObject body) throws Exception {
-        List<Address> addresses = resolveAddresses(conn);
-        boolean tls = usesTls(conn);
-        String baseUrl = managementBaseUrl(addresses.get(0).getHost(), managementPort(conn, tls), tls);
+        // Candidates are tried in order; only connection-level failures
+        // (refused/timeout/DNS) move to the next candidate. A non-2xx HTTP
+        // status means the endpoint answered, so the answer is final.
+        IOException lastConnectionError = null;
+        for (String baseUrl : managementBaseUrls(conn)) {
+            try {
+                return managementRequestOnce(baseUrl, conn, method, path, body);
+            } catch (IOException e) {
+                lastConnectionError = e;
+            }
+        }
+        throw lastConnectionError != null ? lastConnectionError
+            : new IllegalStateException("No management API endpoint candidates");
+    }
+
+    private static JsonElement managementRequestOnce(String baseUrl, JsonObject conn,
+            String method, String path, JsonObject body) throws Exception {
         URL url = URI.create(baseUrl + path).toURL();
         HttpURLConnection http = (HttpURLConnection) url.openConnection();
         try {
             // tls_skip_verify previously only applied to AMQP; honor it for the
             // management API too, or self-signed brokers fail every HTTP call.
-            if (tls && tlsSkipVerify(conn) && http instanceof HttpsURLConnection https) {
+            if (tlsSkipVerify(conn) && http instanceof HttpsURLConnection https) {
                 https.setSSLSocketFactory(trustAllSslContext().getSocketFactory());
                 https.setHostnameVerifier((hostname, session) -> true);
             }
@@ -1656,8 +1650,8 @@ public final class RabbitMqAgent {
             http.setConnectTimeout(10_000);
             http.setReadTimeout(10_000);
             http.setRequestProperty("Authorization",
-                basicAuthHeader(stringOrDefault(conn, "username", "guest"),
-                    stringOrDefault(conn, "password", "guest")));
+                basicAuthHeader(credentialOrGuest(conn, "username"),
+                    credentialOrGuest(conn, "password")));
             if (body != null) {
                 http.setDoOutput(true);
                 http.setRequestProperty("Content-Type", "application/json");
@@ -1686,6 +1680,95 @@ public final class RabbitMqAgent {
 
     static String managementBaseUrl(String host, int port, boolean tls) {
         return (tls ? "https" : "http") + "://" + host + ":" + port;
+    }
+
+    /**
+     * Candidate management API base URLs. An explicit {@code management_url}
+     * wins and is used verbatim (scheme/host/port/path prefix, e.g. a reverse
+     * proxy mount like {@code https://proxy:8443/rmq}); otherwise one candidate
+     * per AMQP address is derived with the management port, and
+     * {@link #managementRequest} fails over across them.
+     */
+    static List<String> managementBaseUrls(JsonObject conn) {
+        String explicit = stringOrNull(conn, "management_url");
+        if (explicit != null && !explicit.isBlank()) {
+            return List.of(normalizeManagementUrl(explicit));
+        }
+        boolean tls = managementTls(conn);
+        int port = managementPort(conn, tls);
+        List<String> baseUrls = new ArrayList<>();
+        for (Address address : resolveAddresses(conn)) {
+            baseUrls.add(managementBaseUrl(address.getHost(), port, tls));
+        }
+        return baseUrls;
+    }
+
+    /**
+     * Trailing slashes are trimmed so base + "/api/..." joins cleanly; the path
+     * prefix itself is kept verbatim (no re-encoding).
+     */
+    static String normalizeManagementUrl(String url) {
+        String trimmed = url.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    /**
+     * Whether the derived management endpoint uses TLS. Only explicit tls/ssl
+     * parameters count: tls_skip_verify is a verification flag, not a scheme
+     * indicator, and must not flip the management API to https.
+     */
+    static boolean managementTls(JsonObject conn) {
+        return (conn.has("tls") && conn.get("tls").isJsonObject())
+            || boolProperty(conn, "ssl")
+            || boolProperty(conn, "tls");
+    }
+
+    /**
+     * Username/password with blank normalization: a missing, null, or
+     * whitespace-only credential falls back to "guest". Without this an empty
+     * string from the bridge authenticates as ":" and fails confusingly.
+     */
+    static String credentialOrGuest(JsonObject conn, String key) {
+        String value = stringOrNull(conn, key);
+        return value == null || value.isBlank() ? "guest" : value;
+    }
+
+    private static final int MANAGEMENT_PAGE_SIZE = 100;
+
+    /**
+     * Fetch every item of a management API list endpoint. RabbitMQ answers a
+     * paginated request ({@code page}/{@code page_size}) with
+     * {@code {items, page, page_count, total_count}}, so the loop walks to the
+     * last page; brokers that ignore the parameters answer with a plain array,
+     * which is returned as-is.
+     */
+    static JsonArray managementGetAll(JsonObject conn, String path) throws Exception {
+        JsonArray all = new JsonArray();
+        for (int page = 1;; page++) {
+            String separator = path.contains("?") ? "&" : "?";
+            JsonElement response = managementGet(conn,
+                path + separator + "page=" + page + "&page_size=" + MANAGEMENT_PAGE_SIZE);
+            if (response.isJsonArray()) {
+                response.getAsJsonArray().forEach(all::add);
+                return all;
+            }
+            if (!response.isJsonObject() || !response.getAsJsonObject().has("items")) {
+                throw new IllegalStateException(
+                    "Unexpected management API response for list endpoint " + path);
+            }
+            JsonObject paged = response.getAsJsonObject();
+            JsonElement items = paged.get("items");
+            if (items.isJsonArray()) {
+                items.getAsJsonArray().forEach(all::add);
+            }
+            Integer pageCount = integerOrNull(paged, "page_count");
+            if (pageCount == null || page >= pageCount) {
+                return all;
+            }
+        }
     }
 
     /**
@@ -1723,13 +1806,6 @@ public final class RabbitMqAgent {
 
     static String urlEncodeVhost(String vhost) {
         return URLEncoder.encode(vhost, StandardCharsets.UTF_8).replace("+", "%20");
-    }
-
-    private static boolean usesTls(JsonObject conn) {
-        return boolOrDefault(conn, "tls_skip_verify", false)
-            || (conn.has("tls") && conn.get("tls").isJsonObject())
-            || boolProperty(conn, "ssl")
-            || boolProperty(conn, "tls");
     }
 
     // -----------------------------------------------------------------------

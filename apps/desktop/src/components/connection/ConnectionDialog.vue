@@ -887,7 +887,8 @@ function resetMqFields(config?: Partial<MqAdminConfig>) {
   const properties = mqExtraProperties(extra);
   const jaasConfig = mqExtraPropertyString(extra, "sasl.jaas.config");
   mqSystemKind.value = systemKind;
-  mqAdminUrl.value = config?.adminUrl?.trim() || (systemKind === "kafka" || systemKind === "rocketmq" || systemKind === "rabbitmq" ? "" : "http://127.0.0.1:8080");
+  const storedAdminUrl = config?.adminUrl?.trim() || (config ? mqExtraString(config as Record<string, unknown>, "admin_url").trim() : "");
+  mqAdminUrl.value = storedAdminUrl || (systemKind === "kafka" || systemKind === "rocketmq" || systemKind === "rabbitmq" ? "" : "http://127.0.0.1:8080");
   mqKafkaBootstrapServers.value = mqExtraString(extra, "bootstrapServers") || "127.0.0.1:9092";
   mqRocketmqNamesrvAddr.value = mqExtraString(extra, "namesrvAddr") || mqExtraString(extra, "namesrv_addr") || "127.0.0.1:9876";
   mqRocketmqClusterName.value = mqExtraString(extra, "clusterName") || mqExtraString(extra, "cluster_name");
@@ -1154,7 +1155,7 @@ function buildMqAdminConfig(): MqAdminConfig {
     };
     return {
       systemKind: "rabbitmq",
-      adminUrl: "",
+      adminUrl: mqAdminUrl.value.trim(),
       auth: buildMqAuth(),
       tlsSkipVerify: mqTlsSkipVerify.value || undefined,
       extra,
@@ -4707,6 +4708,15 @@ function openExternalUrl(url: string) {
                       <Label :class="connectionLabelClass">{{ t("connection.mqVirtualHost") }}</Label>
                       <Input v-model="mqRabbitmqVirtualHost" class="col-span-3" :placeholder="t('connection.mqVirtualHostPlaceholder')" />
                     </div>
+                    <div class="grid grid-cols-4 items-start gap-4">
+                      <Label :class="connectionLabelClass">{{ t("connection.mqRabbitmqAdminUrl") }}</Label>
+                      <div class="col-span-3 space-y-1">
+                        <Input v-model="mqAdminUrl" :placeholder="t('connection.mqRabbitmqAdminUrlPlaceholder')" />
+                        <p class="text-xs text-muted-foreground">
+                          {{ t("connection.mqRabbitmqAdminUrlHint") }}
+                        </p>
+                      </div>
+                    </div>
                   </template>
                   <template v-else>
                     <div class="grid grid-cols-4 items-center gap-4">
@@ -4734,11 +4744,11 @@ function openExternalUrl(url: string) {
                   <template v-else-if="mqAuthKind === 'basic'">
                     <div class="grid grid-cols-4 items-center gap-4">
                       <Label :class="connectionLabelClass">{{ mqSystemKind === "rocketmq" ? t("connection.rocketmqAccessKey") : t("connection.user") }}</Label>
-                      <Input v-model="mqBasicUsername" class="col-span-3" />
+                      <Input v-model="mqBasicUsername" class="col-span-3" :placeholder="mqSystemKind === 'rabbitmq' ? t('connection.mqRabbitmqUsernamePlaceholder') : ''" />
                     </div>
                     <div class="grid grid-cols-4 items-center gap-4">
                       <Label :class="connectionLabelClass">{{ mqSystemKind === "rocketmq" ? t("connection.rocketmqSecretKey") : t("connection.password") }}</Label>
-                      <PasswordInput v-model="mqBasicPassword" class="col-span-3" />
+                      <PasswordInput v-model="mqBasicPassword" class="col-span-3" :placeholder="mqSystemKind === 'rabbitmq' ? t('connection.mqRabbitmqPasswordPlaceholder') : ''" />
                     </div>
                     <div v-if="mqSystemKind === 'kafka'" class="grid grid-cols-4 items-center gap-4">
                       <Label :class="connectionLabelClass">{{ t("connection.mqSaslMechanism") }}</Label>

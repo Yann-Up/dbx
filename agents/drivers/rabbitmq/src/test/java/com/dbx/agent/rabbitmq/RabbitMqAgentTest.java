@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.rabbitmq.client.AMQP;
@@ -18,6 +19,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -256,6 +258,217 @@ class RabbitMqAgentTest {
             assertTrue(error.getMessage().contains("HTTP 401"), error.getMessage());
             assertTrue(error.getMessage().contains("management permission tag"), error.getMessage());
             assertFalse(error.getMessage().contains("plugin must be enabled"), error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void explicitManagementUrlIsUsedVerbatimWithTrailingSlashTrimmed() {
+        JsonObject conn = JsonParser.parseString("""
+            { "addresses": "mq1:5672,mq2:5672", "management_url": "https://proxy:8443/rmq/" }
+            """).getAsJsonObject();
+        assertEquals(List.of("https://proxy:8443/rmq"), RabbitMqAgent.managementBaseUrls(conn));
+    }
+
+    @Test
+    void explicitManagementUrlDoesNotRequireAddresses() {
+        JsonObject conn = JsonParser.parseString("""
+            { "management_url": "http://mgmt:15672" }
+            """).getAsJsonObject();
+        assertEquals(List.of("http://mgmt:15672"), RabbitMqAgent.managementBaseUrls(conn));
+    }
+
+    @Test
+    void derivedManagementBaseUrlsCoverAllAddresses() {
+        JsonObject conn = JsonParser.parseString("""
+            { "addresses": "mq1:5672,mq2:5673" }
+            """).getAsJsonObject();
+        assertEquals(List.of("http://mq1:15672", "http://mq2:15672"),
+            RabbitMqAgent.managementBaseUrls(conn));
+    }
+
+    @Test
+    void tlsSkipVerifyAloneDoesNotFlipDerivedSchemeToHttps() {
+        // tls_skip_verify is a verification flag, not a scheme indicator.
+        JsonObject skipVerifyOnly = JsonParser.parseString("""
+            { "addresses": "mq1", "tls_skip_verify": true }
+            """).getAsJsonObject();
+        assertEquals(List.of("http://mq1:15672"), RabbitMqAgent.managementBaseUrls(skipVerifyOnly));
+
+        JsonObject tlsObject = JsonParser.parseString("""
+            { "addresses": "mq1", "tls": { "skip_verify": true } }
+            """).getAsJsonObject();
+        assertEquals(List.of("https://mq1:15671"), RabbitMqAgent.managementBaseUrls(tlsObject));
+
+        JsonObject sslProperty = JsonParser.parseString("""
+            { "addresses": "mq1", "properties": { "ssl": true } }
+            """).getAsJsonObject();
+        assertEquals(List.of("https://mq1:15671"), RabbitMqAgent.managementBaseUrls(sslProperty));
+    }
+
+    @Test
+    void blankCredentialsFallBackToGuest() throws Exception {
+        ConnectionFactory factory = RabbitMqAgent.buildConnectionFactory(JsonParser.parseString("""
+            { "addresses": "localhost", "username": "", "password": "   " }
+            """).getAsJsonObject());
+        assertEquals("guest", factory.getUsername());
+        assertEquals("guest", factory.getPassword());
+
+        ConnectionFactory nullCredentials = RabbitMqAgent.buildConnectionFactory(JsonParser.parseString("""
+            { "addresses": "localhost", "username": null }
+            """).getAsJsonObject());
+        assertEquals("guest", nullCredentials.getUsername());
+    }
+
+    @Test
+    void managementGetAllPaginatesToLastPage() throws Exception {
+        List<Integer> requestedPages = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/queues", exchange -> {
+            String query = exchange.getRequestURI().getQuery();
+            int page = Integer.parseInt(query.replaceAll(".*page=(\\d+).*", "$1"));
+            requestedPages.add(page);
+            byte[] body = switch (page) {
+                case 1 -> """
+                    { "items": [ { "name": "q1" } ], "page": 1, "page_count": 3, "total_count": 3 }
+                    """.getBytes(StandardCharsets.UTF_8);
+                case 2 -> """
+                    { "items": [ { "name": "q2" } ], "page": 2, "page_count": 3, "total_count": 3 }
+                    """.getBytes(StandardCharsets.UTF_8);
+                default -> """
+                    { "items": [ { "name": "q3" } ], "page": 3, "page_count": 3, "total_count": 3 }
+                    """.getBytes(StandardCharsets.UTF_8);
+            };
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            JsonObject conn = JsonParser.parseString("""
+                { "addresses": "127.0.0.1", "properties": { "management_port": %d } }
+                """.formatted(server.getAddress().getPort())).getAsJsonObject();
+            JsonArray all = RabbitMqAgent.managementGetAll(conn, "/api/queues");
+            assertEquals(3, all.size());
+            assertEquals("q1", all.get(0).getAsJsonObject().get("name").getAsString());
+            assertEquals("q3", all.get(2).getAsJsonObject().get("name").getAsString());
+            assertEquals(List.of(1, 2, 3), requestedPages);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void managementGetAllAcceptsPlainArrayResponse() throws Exception {
+        List<String> requests = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/users", exchange -> {
+            requests.add(exchange.getRequestURI().toString());
+            byte[] body = """
+                [ { "name": "guest", "tags": "administrator" } ]
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            JsonObject conn = JsonParser.parseString("""
+                { "addresses": "127.0.0.1", "properties": { "management_port": %d } }
+                """.formatted(server.getAddress().getPort())).getAsJsonObject();
+            JsonArray all = RabbitMqAgent.managementGetAll(conn, "/api/users");
+            assertEquals(1, all.size());
+            // A plain-array answer means the broker ignored pagination: stop there.
+            assertEquals(1, requests.size());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void managementRequestFailsOverAcrossDerivedCandidates() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/queues", exchange -> {
+            byte[] body = "[]".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            // 127.0.0.2 refuses the connection; the second candidate answers.
+            JsonObject conn = JsonParser.parseString("""
+                { "addresses": "127.0.0.2,127.0.0.1", "properties": { "management_port": %d } }
+                """.formatted(server.getAddress().getPort())).getAsJsonObject();
+            assertTrue(RabbitMqAgent.managementGet(conn, "/api/queues").isJsonArray());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void httpErrorStatusDoesNotTriggerFailover() throws Exception {
+        HttpServer rejecting = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        rejecting.createContext("/api", exchange -> {
+            exchange.sendResponseHeaders(401, -1);
+            exchange.close();
+        });
+        rejecting.start();
+        int port = rejecting.getAddress().getPort();
+        List<String> fallbackHits = new ArrayList<>();
+        HttpServer fallback = HttpServer.create(new InetSocketAddress("127.0.0.2", port), 0);
+        fallback.createContext("/api", exchange -> {
+            fallbackHits.add(exchange.getRequestURI().toString());
+            byte[] body = "[]".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        fallback.start();
+        try {
+            JsonObject conn = JsonParser.parseString("""
+                { "addresses": "127.0.0.1,127.0.0.2", "properties": { "management_port": %d } }
+                """.formatted(port)).getAsJsonObject();
+            Exception error = assertThrows(IllegalStateException.class,
+                () -> RabbitMqAgent.managementGet(conn, "/api/queues"));
+            assertTrue(error.getMessage().contains("HTTP 401"), error.getMessage());
+            // The 401 answer is final: the fallback candidate is never tried.
+            assertTrue(fallbackHits.isEmpty());
+        } finally {
+            rejecting.stop(0);
+            fallback.stop(0);
+        }
+    }
+
+    @Test
+    void managementUrlWithPathPrefixReachesStub() throws Exception {
+        List<String> requests = new ArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/rmq/api/queues", exchange -> {
+            requests.add(exchange.getRequestURI().getRawPath());
+            byte[] body = """
+                [ { "name": "dbx-q1", "durable": true, "state": "running" } ]
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            JsonObject response = JsonParser.parseString(RabbitMqAgent.handleRequest("""
+                { "jsonrpc": "2.0", "id": 70, "method": "mq_list_topics",
+                  "params": { "connection": { "addresses": "192.0.2.1:5672",
+                                              "management_url": "http://127.0.0.1:%d/rmq/" } } }
+                """.formatted(server.getAddress().getPort()))).getAsJsonObject();
+            JsonArray topics = response.getAsJsonObject("result").getAsJsonArray("topics");
+            assertEquals("dbx-q1", topics.get(0).getAsJsonObject().get("name").getAsString());
+            // The reverse-proxy path prefix is preserved verbatim.
+            assertEquals("/rmq/api/queues/%2F", requests.get(0));
         } finally {
             server.stop(0);
         }
