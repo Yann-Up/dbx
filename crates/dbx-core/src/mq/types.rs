@@ -1068,7 +1068,7 @@ mod tests {
         // full struct and stripping the new key: it must deserialize with the
         // flag off.
         let caps = super::MqCapabilities { supports_tenants: true, ..Default::default() };
-        let mut json = serde_json::to_value(&caps).expect("serialize capabilities");
+        let mut json = serde_json::to_value(caps).expect("serialize capabilities");
         assert_eq!(json.get("supportsUserPermissions").and_then(|v| v.as_bool()), Some(false));
         json.as_object_mut().expect("capabilities object").remove("supportsUserPermissions");
 
@@ -1182,7 +1182,7 @@ mod tests {
         // Adapters predating the new flags omit them; deserialization must
         // default both to off.
         let caps = super::MqCapabilities { supports_tenants: true, ..Default::default() };
-        let mut json = serde_json::to_value(&caps).expect("serialize capabilities");
+        let mut json = serde_json::to_value(caps).expect("serialize capabilities");
         json.as_object_mut().expect("capabilities object").remove("supportsPolicies");
         json.as_object_mut().expect("capabilities object").remove("supportsClusterMonitoring");
 

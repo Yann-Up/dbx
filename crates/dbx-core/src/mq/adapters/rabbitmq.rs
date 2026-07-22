@@ -1057,6 +1057,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn capabilities_enable_namespaces_and_clear_backlog() {
         assert!(RABBITMQ_CAPABILITIES.supports_namespaces);
         assert!(RABBITMQ_CAPABILITIES.supports_clear_backlog);
@@ -1396,6 +1397,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn capabilities_enable_policies_and_cluster_monitoring() {
         assert!(RABBITMQ_CAPABILITIES.supports_policies);
         assert!(RABBITMQ_CAPABILITIES.supports_cluster_monitoring);
