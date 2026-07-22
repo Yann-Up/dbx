@@ -627,7 +627,7 @@ pub async fn list_exchanges(
 ) -> Result<Json<Vec<dbx_core::mq::MqExchangeInfo>>, AppError> {
     let result = dbx_core::mq::service::mq_list_exchanges_core(&state.app, &req.connection_id, req.ns)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -646,7 +646,7 @@ pub async fn create_exchange(
         req.auto_delete,
     )
     .await
-    .map_err(AppError)?;
+    .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -657,7 +657,7 @@ pub async fn delete_exchange(
     ensure_writable(&state.app, &req.connection_id, "Delete exchange").await?;
     dbx_core::mq::service::mq_delete_exchange_core(&state.app, &req.connection_id, req.ns, &req.name)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -668,13 +668,15 @@ pub async fn list_bindings(
     let result =
         dbx_core::mq::service::mq_list_bindings_core(&state.app, &req.connection_id, req.ns, req.exchange, req.queue)
             .await
-            .map_err(AppError)?;
+            .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
 pub async fn bind_queue(State(state): State<Arc<WebState>>, Json(req): Json<BindingReq>) -> Result<Json<()>, AppError> {
     ensure_writable(&state.app, &req.connection_id, "Create binding").await?;
-    dbx_core::mq::service::mq_bind_core(&state.app, &req.connection_id, req.ns, req.binding).await.map_err(AppError)?;
+    dbx_core::mq::service::mq_bind_core(&state.app, &req.connection_id, req.ns, req.binding)
+        .await
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -685,7 +687,7 @@ pub async fn unbind_queue(
     ensure_writable(&state.app, &req.connection_id, "Delete binding").await?;
     dbx_core::mq::service::mq_unbind_core(&state.app, &req.connection_id, req.ns, req.binding)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -848,7 +850,7 @@ pub async fn list_client_connections(
 ) -> Result<Json<Vec<dbx_core::mq::MqClientConnectionInfo>>, AppError> {
     let result = dbx_core::mq::service::mq_list_client_connections_core(&state.app, &req.connection_id, req.ns)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -859,7 +861,7 @@ pub async fn list_client_channels(
     let result =
         dbx_core::mq::service::mq_list_client_channels_core(&state.app, &req.connection_id, req.ns, req.connection)
             .await
-            .map_err(AppError)?;
+            .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -870,7 +872,7 @@ pub async fn close_client_connection(
     ensure_writable(&state.app, &req.connection_id, "Close client connection").await?;
     dbx_core::mq::service::mq_close_client_connection_core(&state.app, &req.connection_id, req.ns, &req.name)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -975,7 +977,8 @@ pub async fn list_users(
     State(state): State<Arc<WebState>>,
     Json(req): Json<ConnReq>,
 ) -> Result<Json<Vec<dbx_core::mq::MqUserInfo>>, AppError> {
-    let result = dbx_core::mq::service::mq_list_users_core(&state.app, &req.connection_id).await.map_err(AppError)?;
+    let result =
+        dbx_core::mq::service::mq_list_users_core(&state.app, &req.connection_id).await.map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -992,13 +995,15 @@ pub async fn create_user(
         req.tags.unwrap_or_default(),
     )
     .await
-    .map_err(AppError)?;
+    .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
 pub async fn delete_user(State(state): State<Arc<WebState>>, Json(req): Json<UserReq>) -> Result<Json<()>, AppError> {
     ensure_writable(&state.app, &req.connection_id, "Delete user").await?;
-    dbx_core::mq::service::mq_delete_user_core(&state.app, &req.connection_id, &req.name).await.map_err(AppError)?;
+    dbx_core::mq::service::mq_delete_user_core(&state.app, &req.connection_id, &req.name)
+        .await
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -1020,7 +1025,7 @@ pub async fn list_user_permissions(
     let ns = user_permission_ns(req.virtual_host, req.all_vhosts);
     let mut permissions = dbx_core::mq::service::mq_list_user_permissions_core(&state.app, &req.connection_id, ns)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     if let Some(user) = req.user {
         permissions.retain(|p| p.user == user);
     }
@@ -1044,7 +1049,7 @@ pub async fn grant_user_permission(
         &req.read.unwrap_or_else(all),
     )
     .await
-    .map_err(AppError)?;
+    .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -1056,7 +1061,7 @@ pub async fn revoke_user_permission(
     let ns = user_permission_ns(Some(req.virtual_host), None);
     dbx_core::mq::service::mq_revoke_user_permission_core(&state.app, &req.connection_id, ns, &req.user)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -1067,8 +1072,9 @@ pub async fn list_policies(
     Json(req): Json<ListPoliciesReq>,
 ) -> Result<Json<Vec<dbx_core::mq::MqPolicyInfo>>, AppError> {
     let ns = user_permission_ns(req.virtual_host, req.all_vhosts);
-    let result =
-        dbx_core::mq::service::mq_list_policies_core(&state.app, &req.connection_id, ns).await.map_err(AppError)?;
+    let result = dbx_core::mq::service::mq_list_policies_core(&state.app, &req.connection_id, ns)
+        .await
+        .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -1086,7 +1092,9 @@ pub async fn set_policy(
         priority: req.priority.unwrap_or(0),
         definition: req.definition,
     };
-    dbx_core::mq::service::mq_set_policy_core(&state.app, &req.connection_id, ns, policy).await.map_err(AppError)?;
+    dbx_core::mq::service::mq_set_policy_core(&state.app, &req.connection_id, ns, policy)
+        .await
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -1098,7 +1106,7 @@ pub async fn delete_policy(
     let ns = user_permission_ns(Some(req.virtual_host), None);
     dbx_core::mq::service::mq_delete_policy_core(&state.app, &req.connection_id, ns, &req.name)
         .await
-        .map_err(AppError)?;
+        .map_err(AppError::internal)?;
     Ok(Json(()))
 }
 
@@ -1106,7 +1114,9 @@ pub async fn get_overview(
     State(state): State<Arc<WebState>>,
     Json(req): Json<ConnReq>,
 ) -> Result<Json<dbx_core::mq::MqOverviewInfo>, AppError> {
-    let result = dbx_core::mq::service::mq_get_overview_core(&state.app, &req.connection_id).await.map_err(AppError)?;
+    let result = dbx_core::mq::service::mq_get_overview_core(&state.app, &req.connection_id)
+        .await
+        .map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
@@ -1114,7 +1124,8 @@ pub async fn list_nodes(
     State(state): State<Arc<WebState>>,
     Json(req): Json<ConnReq>,
 ) -> Result<Json<Vec<dbx_core::mq::MqNodeInfo>>, AppError> {
-    let result = dbx_core::mq::service::mq_list_nodes_core(&state.app, &req.connection_id).await.map_err(AppError)?;
+    let result =
+        dbx_core::mq::service::mq_list_nodes_core(&state.app, &req.connection_id).await.map_err(AppError::internal)?;
     Ok(Json(result))
 }
 
