@@ -129,6 +129,13 @@
   --sidebar-border: rgb(229 229 229);
   --sidebar-ring: rgb(161 161 161);
   --dbx-window-top-border: rgb(0 0 0 / 0.35);
+  --dbx-viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --dbx-viewport-height: min(100vh, 100dvh);
+  }
 }
 
 .dark {
@@ -1354,6 +1361,10 @@ body.dbx-table-reference-dragging * {
 .dbx-data-grid-font-family {
   font-family: var(--dbx-data-grid-font-family);
   font-size: 12.5px;
+}
+
+.dbx-data-grid-value-font {
+  font-family: var(--dbx-data-grid-font-family);
 }
 
 /* Tailwind CSS v4 targets Safari 16.4+. Keep these legacy WebKit fallbacks

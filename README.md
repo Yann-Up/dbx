@@ -1,5 +1,5 @@
 <div align="center">
-  <p style="font-size: 18px; white-space: nowrap;"><strong>70+ databases in 20 MB. Desktop & Docker self-hosting, with built-in AI assistant.</strong></p>
+  <p style="font-size: 18px; white-space: nowrap;"><strong>70+ databases in 20 MB. Desktop, Docker, CLI, built-in AI assistant, and MCP Server.</strong></p>
 
   <p>
     <img src="https://dl.dbxio.com/assets/readme-hero-20260707.png" alt="DBX screenshot" width="820" />
@@ -283,7 +283,7 @@ When building the frontend yourself with an absolute asset base, set
 
 - [Node.js](https://nodejs.org/) >= 18
 - [pnpm](https://pnpm.io/)
-- [Rust](https://www.rust-lang.org/tools/install) >= 1.77
+- [Rust](https://www.rust-lang.org/tools/install) >= 1.88
 
 #### System Dependencies
 
