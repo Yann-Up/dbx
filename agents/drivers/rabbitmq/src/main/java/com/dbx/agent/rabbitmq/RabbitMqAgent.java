@@ -198,6 +198,7 @@ public final class RabbitMqAgent {
         Channel nextChannel = null;
         try {
             nextConnection = openConnection(conn);
+            verifyManagementIdentity(conn, serverString(nextConnection.getServerProperties(), "cluster_name"));
             nextChannel = nextConnection.createChannel();
             closeClients();
             connection = nextConnection;
@@ -211,12 +212,50 @@ public final class RabbitMqAgent {
         }
     }
 
+    /**
+     * Guard against the management API pointing at a different broker than the
+     * AMQP connection — the classic symptom is two brokers on one host (AMQP
+     * 5672/5673) where the derived management URL lands on the default
+     * instance and every listing silently shows the wrong broker's data.
+     * Compares the cluster name reported by the management API's overview with
+     * the one from the AMQP handshake; the check is skipped (best effort) when
+     * either side does not report a cluster name or the management API is
+     * unreachable/unauthorized.
+     */
+    static void verifyManagementIdentity(JsonObject conn, String amqpClusterName) throws Exception {
+        if (amqpClusterName == null || amqpClusterName.isBlank()) {
+            return;
+        }
+        JsonElement overview;
+        try {
+            overview = managementGet(conn, "/api/overview");
+        } catch (Exception unavailable) {
+            return;
+        }
+        if (!overview.isJsonObject()) {
+            return;
+        }
+        String managementCluster = stringOrNull(overview.getAsJsonObject(), "cluster_name");
+        if (managementCluster == null || managementCluster.isBlank()
+                || managementCluster.trim().equals(amqpClusterName.trim())) {
+            return;
+        }
+        throw new IllegalStateException(
+            "The RabbitMQ management API belongs to cluster '" + managementCluster.trim()
+                + "' but the AMQP connection targets cluster '" + amqpClusterName.trim()
+                + "'. The management endpoint is pointing at a different broker, so queue and"
+                + " exchange data would come from the wrong server. Set the management URL"
+                + " (Admin URL) or properties.management_port to the management endpoint of the"
+                + " broker you are connecting to.");
+    }
+
     private static Object testConnection(JsonObject params) throws Exception {
         JsonObject conn = connectionObject(params);
         Connection probe = null;
         try {
             probe = openConnection(conn);
             Map<String, Object> serverProps = probe.getServerProperties();
+            verifyManagementIdentity(conn, serverString(serverProps, "cluster_name"));
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("ok", true);
@@ -409,6 +448,8 @@ public final class RabbitMqAgent {
             topic.put("autoDelete", boolOrDefault(queue, "auto_delete", false));
             topic.put("state", stringOrEmpty(queue, "state"));
             topic.put("messages", longOrDefault(queue, "messages", 0));
+            topic.put("messagesReady", longOrDefault(queue, "messages_ready", 0));
+            topic.put("messagesUnacked", longOrDefault(queue, "messages_unacknowledged", 0));
             topic.put("consumers", longOrDefault(queue, "consumers", 0));
             if (allVhosts) {
                 attachVhost(topic, queue);
@@ -1690,9 +1731,17 @@ public final class RabbitMqAgent {
     /**
      * Candidate management API base URLs. An explicit {@code management_url}
      * wins and is used verbatim (scheme/host/port/path prefix, e.g. a reverse
-     * proxy mount like {@code https://proxy:8443/rmq}); otherwise one candidate
-     * per AMQP address is derived with the management port, and
-     * {@link #managementRequest} fails over across them.
+     * proxy mount like {@code https://proxy:8443/rmq}); otherwise candidates
+     * are derived per AMQP address, and {@link #managementRequest} fails over
+     * across them.
+     *
+     * <p>The derived port follows the broker's own convention: the management
+     * plugin listens 10000 above the AMQP port (5672&#8594;15672, 5671&#8594;15671),
+     * so a second broker on AMQP 5673 is reached at 15673. The default
+     * management port stays as a fallback candidate for brokers whose AMQP
+     * port was customized while the management port was not; the connect-time
+     * cluster identity check ({@link #verifyManagementIdentity}) guards
+     * against that fallback silently landing on a different broker.
      */
     static List<String> managementBaseUrls(JsonObject conn) {
         String explicit = stringOrNull(conn, "management_url");
@@ -1700,10 +1749,22 @@ public final class RabbitMqAgent {
             return List.of(normalizeManagementUrl(explicit));
         }
         boolean tls = managementTls(conn);
-        int port = managementPort(conn, tls);
+        Integer configuredPort = configuredManagementPort(conn);
         List<String> baseUrls = new ArrayList<>();
         for (Address address : resolveAddresses(conn)) {
-            baseUrls.add(managementBaseUrl(address.getHost(), port, tls));
+            if (configuredPort != null) {
+                baseUrls.add(managementBaseUrl(address.getHost(), configuredPort, tls));
+                continue;
+            }
+            String derived = managementBaseUrl(address.getHost(), address.getPort() + 10000, tls);
+            if (!baseUrls.contains(derived)) {
+                baseUrls.add(derived);
+            }
+            String fallback = managementBaseUrl(address.getHost(),
+                tls ? DEFAULT_MANAGEMENT_TLS_PORT : DEFAULT_MANAGEMENT_PORT, tls);
+            if (!baseUrls.contains(fallback)) {
+                baseUrls.add(fallback);
+            }
         }
         return baseUrls;
     }
@@ -1791,17 +1852,11 @@ public final class RabbitMqAgent {
         return base + " The rabbitmq_management plugin must be enabled for this operation.";
     }
 
-    static int managementPort(JsonObject conn, boolean tls) {
-        Integer configured = null;
+    /** Explicitly configured management port ({@code properties.management_port}), or null. */
+    static Integer configuredManagementPort(JsonObject conn) {
         JsonObject properties = conn.has("properties") && conn.get("properties").isJsonObject()
             ? conn.getAsJsonObject("properties") : null;
-        if (properties != null) {
-            configured = integerProperty(properties, "management_port");
-        }
-        if (configured != null) {
-            return configured;
-        }
-        return tls ? DEFAULT_MANAGEMENT_TLS_PORT : DEFAULT_MANAGEMENT_PORT;
+        return properties == null ? null : integerProperty(properties, "management_port");
     }
 
     static String basicAuthHeader(String username, String password) {
