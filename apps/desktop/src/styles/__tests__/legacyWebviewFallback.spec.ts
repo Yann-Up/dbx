@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 const globalsCss = readFileSync(new URL("../globals.css", import.meta.url), "utf8");
 const dialogContentSource = readFileSync(new URL("../../components/ui/dialog/DialogContent.vue", import.meta.url), "utf8");
 const dialogScrollContentSource = readFileSync(new URL("../../components/ui/dialog/DialogScrollContent.vue", import.meta.url), "utf8");
+const dialogOverlaySource = readFileSync(new URL("../../components/ui/dialog/DialogOverlay.vue", import.meta.url), "utf8");
 const connectionDialogSource = readFileSync(new URL("../../components/connection/ConnectionDialog.vue", import.meta.url), "utf8");
+const desktopIndexSource = readFileSync(new URL("../../../index.html", import.meta.url), "utf8");
+const connectionDialogLegacyCss = readFileSync(new URL("../../../public/connection-dialog-legacy.css", import.meta.url), "utf8");
 
 describe("legacy WebView CSS fallbacks", () => {
   it("scopes component overrides to WebViews without OKLCH support", () => {
@@ -41,9 +44,28 @@ describe("legacy WebView CSS fallbacks", () => {
     expect(connectionDialogSource).toContain("max-height: calc(var(--dbx-viewport-height) - 2rem);");
   });
 
+  it("uses a lightweight theme-aware mask without full-window filters", () => {
+    expect(dialogOverlaySource).not.toContain("backdrop-filter");
+    expect(dialogOverlaySource).toContain("bg-black/25");
+    expect(dialogOverlaySource).toContain("dark:bg-background/70");
+    expect(globalsCss).not.toContain("dbx-dialog-backdrop");
+    expect(globalsCss).not.toContain("filter: blur(4px);");
+  });
+
   it("keeps legacy tab triggers connected to the configured corner style", () => {
     const tabsTriggerRule = globalsCss.match(/\[data-slot="tabs-trigger"\] \{([\s\S]*?)\n  \}/)?.[1];
 
     expect(tabsTriggerRule).toContain("border-radius: var(--dbx-radius-fixed-6);");
+  });
+
+  it("loads connection dialog media fallbacks without CSS transformation", () => {
+    expect(desktopIndexSource).toContain('href="/connection-dialog-legacy.css"');
+    expect(connectionDialogLegacyCss).toContain("@media (min-width: 640px)");
+    expect(connectionDialogLegacyCss).toContain("@media (min-width: 1024px)");
+    expect(connectionDialogLegacyCss).toContain("min-width: 38rem !important;");
+    expect(connectionDialogLegacyCss).toContain("width: 0 !important;");
+    expect(connectionDialogLegacyCss).toContain(".connection-db-picker-option");
+    expect(connectionDialogLegacyCss).not.toContain("width >=");
+    expect(connectionDialogSource).not.toContain("@media (min-width: 640px)");
   });
 });

@@ -29,6 +29,9 @@ public final class AgentProtocol {
     public static final String METHOD_LIST_INDEXES = "list_indexes";
     public static final String METHOD_LIST_FOREIGN_KEYS = "list_foreign_keys";
     public static final String METHOD_LIST_TRIGGERS = "list_triggers";
+    public static final String METHOD_LIST_CONSTRAINTS = "list_constraints";
+    public static final String METHOD_LIST_PARTITIONS = "list_partitions";
+    public static final String METHOD_LIST_SUBPARTITIONS = "list_subpartitions";
     public static final String METHOD_EXECUTE_QUERY = "execute_query";
     public static final String METHOD_EXECUTE_QUERY_PAGE = "execute_query_page";
     public static final String METHOD_FETCH_QUERY_PAGE = "fetch_query_page";
@@ -64,6 +67,32 @@ public final class AgentProtocol {
     public static final String KV_METHOD_GET = "kv_get";
     public static final String KV_METHOD_PUT = "kv_put";
     public static final String KV_METHOD_DELETE = "kv_delete";
+    public static final String KV_METHOD_RENAME = "kv_rename";
+    public static final String KV_METHOD_HISTORY = "kv_history";
+    public static final String KV_METHOD_STATUS = "kv_status";
+    public static final String ETCD_METHOD_COMPACT = "etcd_compact";
+    public static final String ETCD_METHOD_DEFRAG = "etcd_defrag";
+    public static final String ETCD_METHOD_WATCH_START = "etcd_watch_start";
+    public static final String ETCD_METHOD_WATCH_POLL = "etcd_watch_poll";
+    public static final String ETCD_METHOD_WATCH_STOP = "etcd_watch_stop";
+    public static final String ETCD_METHOD_LEASE_LIST = "etcd_lease_list";
+    public static final String ETCD_METHOD_LEASE_GET = "etcd_lease_get";
+    public static final String ETCD_METHOD_LEASE_GRANT = "etcd_lease_grant";
+    public static final String ETCD_METHOD_LEASE_KEEPALIVE = "etcd_lease_keepalive_once";
+    public static final String ETCD_METHOD_LEASE_REVOKE = "etcd_lease_revoke";
+    public static final String ETCD_METHOD_AUTH_USER_LIST = "etcd_auth_user_list";
+    public static final String ETCD_METHOD_AUTH_USER_GET = "etcd_auth_user_get";
+    public static final String ETCD_METHOD_AUTH_USER_ADD = "etcd_auth_user_add";
+    public static final String ETCD_METHOD_AUTH_USER_DELETE = "etcd_auth_user_delete";
+    public static final String ETCD_METHOD_AUTH_USER_CHANGE_PASSWORD = "etcd_auth_user_change_password";
+    public static final String ETCD_METHOD_AUTH_USER_GRANT_ROLE = "etcd_auth_user_grant_role";
+    public static final String ETCD_METHOD_AUTH_USER_REVOKE_ROLE = "etcd_auth_user_revoke_role";
+    public static final String ETCD_METHOD_AUTH_ROLE_LIST = "etcd_auth_role_list";
+    public static final String ETCD_METHOD_AUTH_ROLE_GET = "etcd_auth_role_get";
+    public static final String ETCD_METHOD_AUTH_ROLE_ADD = "etcd_auth_role_add";
+    public static final String ETCD_METHOD_AUTH_ROLE_DELETE = "etcd_auth_role_delete";
+    public static final String ETCD_METHOD_AUTH_ROLE_GRANT_PERMISSION = "etcd_auth_role_grant_permission";
+    public static final String ETCD_METHOD_AUTH_ROLE_REVOKE_PERMISSION = "etcd_auth_role_revoke_permission";
 
     public static final String CAPABILITY_CONNECT = "connect";
     public static final String CAPABILITY_TEST_CONNECTION = "test_connection";
@@ -73,6 +102,16 @@ public final class AgentProtocol {
     public static final String CAPABILITY_TRANSACTION = "transaction";
     public static final String CAPABILITY_DDL = "ddl";
     public static final String CAPABILITY_KV = "kv";
+    public static final String CAPABILITY_KV_TTL = "kv_ttl";
+    public static final String CAPABILITY_KV_CAS = "kv_cas";
+    public static final String CAPABILITY_KV_LIST_VALUES = "kv_list_values";
+    public static final String CAPABILITY_KV_STATUS = "kv_status";
+    public static final String CAPABILITY_KV_HISTORY = "kv_history";
+    public static final String CAPABILITY_ETCD_COMPACTION = "etcd_compaction";
+    public static final String CAPABILITY_ETCD_DEFRAG = "etcd_defrag";
+    public static final String CAPABILITY_ETCD_WATCH = "etcd_watch";
+    public static final String CAPABILITY_ETCD_LEASE = "etcd_lease";
+    public static final String CAPABILITY_ETCD_AUTH = "etcd_auth";
     public static final String CAPABILITY_MULTI_SESSION = "multi_session";
 
     public static final List<String> CAPABILITIES = Collections.unmodifiableList(Arrays.asList(
@@ -93,8 +132,21 @@ public final class AgentProtocol {
         CAPABILITY_PAGED_QUERY,
         CAPABILITY_TRANSACTION,
         CAPABILITY_DDL,
-        CAPABILITY_KV
+        CAPABILITY_KV,
+        CAPABILITY_KV_TTL,
+        CAPABILITY_KV_CAS,
+        CAPABILITY_KV_LIST_VALUES,
+        CAPABILITY_KV_STATUS,
+        CAPABILITY_KV_HISTORY,
+        CAPABILITY_ETCD_COMPACTION,
+        CAPABILITY_ETCD_DEFRAG,
+        CAPABILITY_ETCD_WATCH,
+        CAPABILITY_ETCD_LEASE,
+        CAPABILITY_ETCD_AUTH
     ));
+
+    public static final List<String> MULTI_SESSION_CAPABILITIES;
+    public static final List<String> MULTI_SESSION_ALL_CAPABILITIES;
 
     public static final List<String> COMMON_METHODS = Collections.unmodifiableList(Arrays.asList(
         METHOD_HANDSHAKE,
@@ -114,6 +166,9 @@ public final class AgentProtocol {
         METHOD_LIST_INDEXES,
         METHOD_LIST_FOREIGN_KEYS,
         METHOD_LIST_TRIGGERS,
+        METHOD_LIST_CONSTRAINTS,
+        METHOD_LIST_PARTITIONS,
+        METHOD_LIST_SUBPARTITIONS,
         METHOD_EXECUTE_QUERY,
         METHOD_EXECUTE_QUERY_PAGE,
         METHOD_FETCH_QUERY_PAGE,
@@ -131,6 +186,14 @@ public final class AgentProtocol {
     public static final List<String> MULTI_SESSION_METHODS;
 
     static {
+        List<String> capabilities = new java.util.ArrayList<>(CAPABILITIES);
+        capabilities.add(CAPABILITY_MULTI_SESSION);
+        MULTI_SESSION_CAPABILITIES = Collections.unmodifiableList(capabilities);
+
+        List<String> allCapabilities = new java.util.ArrayList<>(ALL_CAPABILITIES);
+        allCapabilities.add(CAPABILITY_MULTI_SESSION);
+        MULTI_SESSION_ALL_CAPABILITIES = Collections.unmodifiableList(allCapabilities);
+
         List<String> methods = new java.util.ArrayList<>(COMMON_METHODS);
         int insertAt = methods.indexOf(METHOD_CONNECT) + 1;
         methods.addAll(insertAt, Arrays.asList(
@@ -163,7 +226,33 @@ public final class AgentProtocol {
         KV_METHOD_LIST_PREFIX,
         KV_METHOD_GET,
         KV_METHOD_PUT,
-        KV_METHOD_DELETE
+        KV_METHOD_DELETE,
+        KV_METHOD_RENAME,
+        KV_METHOD_HISTORY,
+        KV_METHOD_STATUS,
+        ETCD_METHOD_COMPACT,
+        ETCD_METHOD_DEFRAG,
+        ETCD_METHOD_WATCH_START,
+        ETCD_METHOD_WATCH_POLL,
+        ETCD_METHOD_WATCH_STOP,
+        ETCD_METHOD_LEASE_LIST,
+        ETCD_METHOD_LEASE_GET,
+        ETCD_METHOD_LEASE_GRANT,
+        ETCD_METHOD_LEASE_KEEPALIVE,
+        ETCD_METHOD_LEASE_REVOKE,
+        ETCD_METHOD_AUTH_USER_LIST,
+        ETCD_METHOD_AUTH_USER_GET,
+        ETCD_METHOD_AUTH_USER_ADD,
+        ETCD_METHOD_AUTH_USER_DELETE,
+        ETCD_METHOD_AUTH_USER_CHANGE_PASSWORD,
+        ETCD_METHOD_AUTH_USER_GRANT_ROLE,
+        ETCD_METHOD_AUTH_USER_REVOKE_ROLE,
+        ETCD_METHOD_AUTH_ROLE_LIST,
+        ETCD_METHOD_AUTH_ROLE_GET,
+        ETCD_METHOD_AUTH_ROLE_ADD,
+        ETCD_METHOD_AUTH_ROLE_DELETE,
+        ETCD_METHOD_AUTH_ROLE_GRANT_PERMISSION,
+        ETCD_METHOD_AUTH_ROLE_REVOKE_PERMISSION
     ));
 
     private AgentProtocol() {
@@ -174,9 +263,11 @@ public final class AgentProtocol {
     }
 
     public static HandshakeResult multiSessionHandshakeResult() {
-        List<String> capabilities = new java.util.ArrayList<>(CAPABILITIES);
-        capabilities.add(CAPABILITY_MULTI_SESSION);
-        return new HandshakeResult(MULTI_SESSION_PROTOCOL_VERSION, MULTI_SESSION_PROTOCOL_VERSION, capabilities);
+        return new HandshakeResult(
+            MULTI_SESSION_PROTOCOL_VERSION,
+            MULTI_SESSION_PROTOCOL_VERSION,
+            MULTI_SESSION_CAPABILITIES
+        );
     }
 
     public static final class HandshakeResult {

@@ -67,6 +67,7 @@ export const loadConnections = forward("loadConnections");
 export const loadTunnelProfiles = forward("loadTunnelProfiles");
 export const saveTunnelProfiles = forward("saveTunnelProfiles");
 export const testTunnelProfile = forward("testTunnelProfile");
+export const resolveSshPrompt = forward("resolveSshPrompt");
 export const readKeychainPassword = forward("readKeychainPassword");
 export const readKeychainPasswords = forward("readKeychainPasswords");
 export const decryptConfig = forward("decryptConfig");
@@ -95,25 +96,28 @@ export const clearDriverDownloadCache = forward("clearDriverDownloadCache");
 export const getDriverRuntimeSummary = forward("getDriverRuntimeSummary");
 export const stopDriverRuntime = forward("stopDriverRuntime");
 export const restartDriverRuntime = forward("restartDriverRuntime");
-export async function installAgent(dbType: string) {
+export async function installAgent(dbType: string, operationId?: string) {
   const backend = await getBackend();
-  return backend.installAgent(dbType, useSettingsStore().editorSettings.updateDownloadSource);
+  return backend.installAgent(dbType, useSettingsStore().editorSettings.updateDownloadSource, operationId);
 }
-export async function upgradeAllAgents() {
+export async function upgradeAllAgents(operationId?: string) {
   const backend = await getBackend();
-  return backend.upgradeAllAgents(useSettingsStore().editorSettings.updateDownloadSource);
+  return backend.upgradeAllAgents(useSettingsStore().editorSettings.updateDownloadSource, operationId);
 }
 export const checkAgentUpdateBlockers = forward("checkAgentUpdateBlockers");
 export const uninstallAgent = forward("uninstallAgent");
 export const getAgentJavaRuntimeConfig = forward("getAgentJavaRuntimeConfig");
 export const setAgentJavaRuntimeConfig = forward("setAgentJavaRuntimeConfig");
 export const invalidateAgentRegistryCache = forward("invalidateAgentRegistryCache");
-export const importAgentsFromZip = forward("importAgentsFromZip");
+export async function importAgentsFromZip(fileOrPath: string | File, operationId?: string) {
+  const backend = await getBackend();
+  return backend.importAgentsFromZip(fileOrPath, operationId);
+}
 export const importAgentDriver = forward("importAgentDriver");
 export const importAgentJar = importAgentDriver;
-export async function reinstallJre(jreKey?: string) {
+export async function reinstallJre(jreKey?: string, operationId?: string) {
   const backend = await getBackend();
-  return backend.reinstallJre(jreKey, useSettingsStore().editorSettings.updateDownloadSource);
+  return backend.reinstallJre(jreKey, useSettingsStore().editorSettings.updateDownloadSource, operationId);
 }
 export const uninstallJre = forward("uninstallJre");
 export const listenAgentInstallProgress = forward("listenAgentInstallProgress");
@@ -158,7 +162,11 @@ export const listDataTypes = forward("listDataTypes");
 export const listIndexes = forward("listIndexes");
 export const listForeignKeys = forward("listForeignKeys");
 export const listTriggers = forward("listTriggers");
+export const listConstraints = forward("listConstraints");
+export const listPartitions = forward("listPartitions");
+export const listSubpartitions = forward("listSubpartitions");
 export const getTableDdl = forward("getTableDdl");
+export const getTableDisplayDdl = forward("getTableDisplayDdl");
 export const listFunctions = forward("listFunctions");
 export const listSequences = forward("listSequences");
 export const listRules = forward("listRules");
@@ -167,12 +175,15 @@ export const listExtensions = forward("listExtensions");
 export const listAvailableExtensions = forward("listAvailableExtensions");
 export const prepareSchemaDiff = forward("prepareSchemaDiff");
 export const generateSchemaSyncSql = forward("generateSchemaSyncSql");
+export const listDialectDataTypes = forward("listDialectDataTypes");
 
 // Query
 export const executeQuery = forward("executeQuery");
 export const executeMulti = forward("executeMulti");
+export const executeMultiWithProgress = forward("executeMultiWithProgress");
 export const executeBatch = forward("executeBatch");
 export const executeScript = forward("executeScript");
+export const executeScriptWith2pc = forward("executeScriptWith2pc");
 export const executeInTransaction = forward("executeInTransaction");
 export const beginManualTransaction = forward("beginManualTransaction");
 export const executeInManualTransaction = forward("executeInManualTransaction");
@@ -219,6 +230,7 @@ export const buildCreateTableSql = forward("buildCreateTableSql");
 export const buildSingleColumnAlterSql = forward("buildSingleColumnAlterSql");
 export const analyzeEditableQueryEditability = forward("analyzeEditableQueryEditability");
 export const prepareDataGridSave = forward("prepareDataGridSave");
+export const extractDataGridSelection = forward("extractDataGridSelection");
 export const buildDataGridCopyUpdateStatements = forward("buildDataGridCopyUpdateStatements");
 export const buildDataGridCopyInsertStatement = forward("buildDataGridCopyInsertStatement");
 export const buildDataGridContextFilterCondition = forward("buildDataGridContextFilterCondition");
@@ -242,6 +254,9 @@ export const aiAgentStream = forward("aiAgentStream");
 export const aiCancelStream = forward("aiCancelStream");
 export const aiTestConnection = forward("aiTestConnection");
 export const aiListModels = forward("aiListModels");
+export const aiResolveModelEffort = forward("aiResolveModelEffort");
+export const saveAiChatSelection = forward("saveAiChatSelection");
+export const loadAiChatSelection = forward("loadAiChatSelection");
 export const saveAiConfig = forward("saveAiConfig");
 export const loadAiConfig = forward("loadAiConfig");
 export const saveAiConfigs = forward("saveAiConfigs");
@@ -257,6 +272,8 @@ export const loadMcpGlobalPolicy = forward("loadMcpGlobalPolicy");
 export const saveMcpGlobalPolicy = forward("saveMcpGlobalPolicy");
 export const loadMaxAgentTurns = forward("loadMaxAgentTurns");
 export const saveMaxAgentTurns = forward("saveMaxAgentTurns");
+export const loadMaxRetries = forward("loadMaxRetries");
+export const saveMaxRetries = forward("saveMaxRetries");
 export const completeAppClose = forward("completeAppClose");
 export const requestAppClose = forward("requestAppClose");
 export const setDriverStoreDir = forward("setDriverStoreDir");
@@ -304,6 +321,7 @@ export const listSshConfigHosts = forward("listSshConfigHosts");
 // SQL File Execution
 export const previewSqlFile = forward("previewSqlFile");
 export const executeSqlFile = forward("executeSqlFile");
+export const executeSqlFiles = forward("executeSqlFiles");
 export const cancelSqlFileExecution = forward("cancelSqlFileExecution");
 export const listenSqlFileProgress = forward("listenSqlFileProgress");
 export const pendingOpenSqlFiles = forward("pendingOpenSqlFiles");
@@ -323,12 +341,22 @@ export const nacosListConfigs = forward("nacosListConfigs");
 export const nacosGetConfig = forward("nacosGetConfig");
 export const nacosPublishConfig = forward("nacosPublishConfig");
 export const nacosDeleteConfig = forward("nacosDeleteConfig");
+export const nacosSearchConfigContent = forward("nacosSearchConfigContent");
+export const nacosCancelConfigContentSearch = forward("nacosCancelConfigContentSearch");
+export const nacosExportConfigs = forward("nacosExportConfigs");
+export const nacosPreviewConfigImport = forward("nacosPreviewConfigImport");
+export const nacosApplyConfigImport = forward("nacosApplyConfigImport");
+export const nacosPreviewConfigTransfer = forward("nacosPreviewConfigTransfer");
+export const nacosApplyConfigTransfer = forward("nacosApplyConfigTransfer");
 export const nacosListConfigHistory = forward("nacosListConfigHistory");
 export const nacosGetConfigHistory = forward("nacosGetConfigHistory");
 export const nacosRollbackConfig = forward("nacosRollbackConfig");
+export const nacosGetRNacosConsoleCaptcha = forward("nacosGetRNacosConsoleCaptcha");
+export const nacosLoginRNacosConsole = forward("nacosLoginRNacosConsole");
 export const nacosListServices = forward("nacosListServices");
 export const nacosListInstances = forward("nacosListInstances");
 export const nacosUpdateInstance = forward("nacosUpdateInstance");
+export const nacosGetDashboard = forward("nacosGetDashboard");
 export const nacosRawRequest = forward("nacosRawRequest");
 
 // Data Transfer
@@ -364,6 +392,11 @@ export const redisScanKeys = forward("redisScanKeys");
 export const redisScanKeysBatch = forward("redisScanKeysBatch");
 export const redisScanValues = forward("redisScanValues");
 export const redisGetValue = forward("redisGetValue");
+export const redisGetTtl = forward("redisGetTtl");
+export const redisGetStreamEntries = forward("redisGetStreamEntries");
+export const redisGetStreamGroups = forward("redisGetStreamGroups");
+export const redisGetStreamConsumers = forward("redisGetStreamConsumers");
+export const redisGetStreamPending = forward("redisGetStreamPending");
 export const redisSetString = forward("redisSetString");
 export const redisDeleteKey = forward("redisDeleteKey");
 export const redisHashSet = forward("redisHashSet");
@@ -379,6 +412,7 @@ export const redisStreamAdd = forward("redisStreamAdd");
 export const redisJsonSet = forward("redisJsonSet");
 export const redisCheckJsonModule = forward("redisCheckJsonModule");
 export const redisSetTtl = forward("redisSetTtl");
+export const redisSetExpireAt = forward("redisSetExpireAt");
 export const redisDeleteKeys = forward("redisDeleteKeys");
 export const redisFlushDb = forward("redisFlushDb");
 export const redisExecuteCommand = forward("redisExecuteCommand");
@@ -390,15 +424,37 @@ export const redisClusterMasterNodes = forward("redisClusterMasterNodes");
 
 // etcd
 export const etcdListPrefix = forward("etcdListPrefix");
+export const etcdSupportsTtl = forward("etcdSupportsTtl");
 export const etcdGet = forward("etcdGet");
 export const etcdPut = forward("etcdPut");
 export const etcdDelete = forward("etcdDelete");
+export const etcdRename = forward("etcdRename");
+export const etcdHistory = forward("etcdHistory");
+export const etcdStatus = forward("etcdStatus");
+export const etcdPreflight = forward("etcdPreflight");
+export const etcdCompact = forward("etcdCompact");
+export const etcdDefrag = forward("etcdDefrag");
+export const etcdWatchStart = forward("etcdWatchStart");
+export const etcdWatchPoll = forward("etcdWatchPoll");
+export const etcdWatchStop = forward("etcdWatchStop");
+export const etcdLeaseList = forward("etcdLeaseList");
+export const etcdLeaseCall = forward("etcdLeaseCall");
+export const etcdAuthCall = forward("etcdAuthCall");
 
 // ZooKeeper
 export const zookeeperListPrefix = forward("zookeeperListPrefix");
 export const zookeeperGet = forward("zookeeperGet");
 export const zookeeperPut = forward("zookeeperPut");
 export const zookeeperDelete = forward("zookeeperDelete");
+
+// HBase
+export const hbaseGetTableSchema = forward("hbaseGetTableSchema");
+export const hbaseScanRows = forward("hbaseScanRows");
+export const hbaseGetRow = forward("hbaseGetRow");
+export const hbasePutRow = forward("hbasePutRow");
+export const hbaseDeleteRow = forward("hbaseDeleteRow");
+export const hbaseCreateTable = forward("hbaseCreateTable");
+export const hbaseDeleteTable = forward("hbaseDeleteTable");
 
 // Message Queue
 export const mqTestConnection = forward("mqTestConnection");
@@ -536,6 +592,7 @@ export const checkForUpdates = forward("checkForUpdates");
 export const fetchChangelog = forward("fetchChangelog");
 export const getSystemProxyUrl = forward("getSystemProxyUrl");
 export const downloadUpdate = forward("downloadUpdate");
+export const cancelUpdateDownload = forward("cancelUpdateDownload");
 export const installDownloadedUpdate = forward("installDownloadedUpdate");
 export const getAppVersion = forward("getAppVersion");
 export const getAppSupportInfo = forward("getAppSupportInfo");
@@ -590,8 +647,14 @@ export type {
   RedisKeyInfo,
   RedisListItem,
   RedisSetItem,
+  RedisStreamConsumer,
   RedisStreamEntry,
   RedisStreamField,
+  RedisStreamGroup,
+  RedisStreamMetric,
+  RedisStreamPage,
+  RedisStreamPendingEntry,
+  RedisStreamPendingPage,
   RedisValue,
   RedisValueData,
   RedisZsetItem,
@@ -601,17 +664,40 @@ export type {
   RedisSlowlogEntry,
   RedisNodeEndpoint,
   KvValueEncoding,
+  KvInt64,
   KvValue,
   KvKeyMetadata,
   KvKeySummary,
   KvListPrefixResponse,
   KvListPrefixOptions,
+  KvGetOptions,
   KvGetResponse,
   KvWriteMode,
   KvCreateMode,
   KvPutOptions,
   KvPutResponse,
+  KvDeleteOptions,
   KvDeleteResponse,
+  KvHistoryEventType,
+  KvHistoryEvent,
+  KvHistoryResponse,
+  KvStatusMember,
+  KvPrometheusMetrics,
+  KvStatusResponse,
+  EtcdDefragResponse,
+  EtcdDefragMemberResult,
+  EtcdWatchStartRequest,
+  EtcdWatchStartResponse,
+  EtcdWatchPollResponse,
+  EtcdLeaseListResponse,
+  EtcdLeaseDetail,
+  EtcdAuthUserListResponse,
+  EtcdAuthUserDetail,
+  EtcdAuthPermission,
+  EtcdAuthRoleListResponse,
+  EtcdAuthRoleDetail,
+  EtcdPreflightResponse,
+  EtcdDangerousApproval,
   DocumentQueryResult,
   MongoDocumentResult,
   HistoryEntry,

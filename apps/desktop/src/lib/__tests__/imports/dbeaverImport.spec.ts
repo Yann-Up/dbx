@@ -24,6 +24,32 @@ function layoutLabels(layout: SidebarLayout, connectionNames: Map<string, string
 }
 
 describe("DBeaver folder import", () => {
+  it("imports a SQLite file path without treating it as a schema", async () => {
+    const [connection] = await parseDbeaverConnections(
+      payload({
+        connections: {
+          sqlite: {
+            id: "sqlite",
+            name: "Local SQLite",
+            provider: "sqlite",
+            driver: "sqlite_jdbc",
+            configuration: {
+              url: "jdbc:sqlite:/tmp/app.sqlite",
+              database: "/tmp/app.sqlite",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(connection).toMatchObject({
+      name: "Local SQLite",
+      db_type: "sqlite",
+      host: "/tmp/app.sqlite",
+    });
+    expect(connection?.database).toBeUndefined();
+  });
+
   it("keeps parseDbeaverConnections compatible when no folders exist", async () => {
     const connections = await parseDbeaverConnections(payload({ connections: { root: mysqlConnection("root", "Root") } }));
 
@@ -79,5 +105,38 @@ describe("DBeaver folder import", () => {
 
     const names = new Map(result.connections.map((connection) => [connection.id, connection.name]));
     expect(layoutLabels(result.layout!, names)).toEqual([{ group: "Ad hoc", children: [{ group: "Production", children: ["Nested"] }] }]);
+  });
+});
+
+describe("DBeaver Cloudberry import", () => {
+  it("preserves Cloudberry while reusing the PostgreSQL backend", async () => {
+    const connections = await parseDbeaverConnections(
+      payload({
+        connections: {
+          cloudberry: {
+            id: "cloudberry",
+            name: "analytics",
+            provider: "cloudberry",
+            driver: "cloudberry-jdbc",
+            configuration: {
+              host: "cb.example.com",
+              port: 5432,
+              database: "warehouse",
+              user: "analyst",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(connections[0]).toMatchObject({
+      db_type: "postgres",
+      driver_profile: "cloudberry",
+      driver_label: "Apache Cloudberry",
+      host: "cb.example.com",
+      port: 5432,
+      database: "warehouse",
+      username: "analyst",
+    });
   });
 });

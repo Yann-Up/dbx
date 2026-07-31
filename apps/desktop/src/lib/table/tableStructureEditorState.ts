@@ -288,6 +288,7 @@ const DATA_TYPE_OPTION_ALIASES: Partial<Record<DatabaseType, string>> = {
   questdb: "questdb",
   redshift: "postgres",
   highgo: "postgres",
+  uxdb: "postgres",
   vastbase: "postgres",
   kingbase: "postgres",
   dameng: "oracle",
@@ -466,7 +467,7 @@ export function parseExtraToColumnExtra(extra: string | null | undefined, databa
     if (lower.includes("on update current_timestamp")) {
       result.onUpdateCurrentTimestamp = true;
     }
-  } else if (databaseType === "postgres" || databaseType === "gaussdb" || databaseType === "kwdb" || databaseType === "opengauss" || databaseType === "questdb" || databaseType === "highgo" || databaseType === "vastbase" || databaseType === "kingbase") {
+  } else if (databaseType === "postgres" || databaseType === "gaussdb" || databaseType === "kwdb" || databaseType === "opengauss" || databaseType === "questdb" || databaseType === "highgo" || databaseType === "uxdb" || databaseType === "vastbase" || databaseType === "kingbase") {
     const identityMatch = lower.match(/generated\s+(by\s+default|always)\s+as\s+identity/i);
     if (identityMatch) {
       const sequenceMatch = lower.match(/start\s+with\s*(-?\d+)\s+increment\s+by\s*(-?\d+)/i);
@@ -757,6 +758,16 @@ export function rehydrateColumnDraftsFromMetadata(draftColumns: EditableStructur
   return [...nextColumns, ...missingMetadataDrafts];
 }
 
+/** Canonicalize index method for structure editor options (e.g. Postgres `btree` → `BTREE`). */
+export function normalizeStructureIndexType(indexType: string | null | undefined): string {
+  return (indexType ?? "").trim().toUpperCase();
+}
+
+/** Case-insensitive index-type equality (draft is uppercased; API may still return lowercase amname). */
+export function sameStructureIndexType(left: string | null | undefined, right: string | null | undefined): boolean {
+  return normalizeStructureIndexType(left) === normalizeStructureIndexType(right);
+}
+
 export function createIndexDrafts(indexes: IndexInfo[]): EditableStructureIndex[] {
   return indexes.map((index) => ({
     id: `existing:${index.name}`,
@@ -766,7 +777,8 @@ export function createIndexDrafts(indexes: IndexInfo[]): EditableStructureIndex[
     isUnique: index.is_unique,
     isPrimary: index.is_primary,
     filter: index.filter ?? "",
-    indexType: index.index_type ?? "",
+    // Match Select options (BTREE/GIN/…); Postgres pg_am.amname is lowercase.
+    indexType: normalizeStructureIndexType(index.index_type),
     includedColumns: index.included_columns ? [...index.included_columns] : [],
     comment: index.comment ?? "",
     original: index,
@@ -813,6 +825,10 @@ export function createTriggerDrafts(triggers: TriggerInfo[]): EditableStructureT
     original: trigger,
     markedForDrop: false,
   }));
+}
+
+export function canEditStructuredTriggerDraft(databaseType: DatabaseType | undefined, trigger: EditableStructureTrigger): boolean {
+  return !trigger.original || (databaseType !== undefined && databaseType !== "oracle");
 }
 
 export function toColumnNames(columns: string[]): string {
@@ -1016,6 +1032,7 @@ function isTemporalPrecisionType(dbType: DatabaseType | undefined, baseType: str
     case "kwdb":
     case "opengauss":
     case "highgo":
+    case "uxdb":
     case "vastbase":
     case "kingbase":
     case "redshift":
@@ -1109,7 +1126,7 @@ export function isDataTypeLengthDisabled(_dbType: DatabaseType | undefined, base
     return key !== "geohash" && key !== "decimal";
   } else if (_dbType === "manticoresearch") {
     return key !== "bit" && key !== "float_vector";
-  } else if (_dbType === "postgres" || _dbType === "gaussdb" || _dbType === "kwdb" || _dbType === "opengauss" || _dbType === "highgo" || _dbType === "vastbase" || _dbType === "kingbase") {
+  } else if (_dbType === "postgres" || _dbType === "gaussdb" || _dbType === "kwdb" || _dbType === "opengauss" || _dbType === "highgo" || _dbType === "uxdb" || _dbType === "vastbase" || _dbType === "kingbase") {
     return POSTGRES_TYPE_LENGTH_DISABLES.includes(key);
   } else if (isOracleLikeStructureType(_dbType)) {
     // Dameng/Oracle integer aliases have fixed precision; MySQL-style display widths generate invalid DDL.

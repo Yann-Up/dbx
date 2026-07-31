@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::ai::AiConfigItem;
 use crate::connection_secrets::{
     MQ_AUTH_API_KEY_VALUE_KEY, MQ_AUTH_CLIENT_SECRET_KEY, MQ_AUTH_PASSWORD_KEY, MQ_AUTH_TOKEN_KEY,
-    MQ_TOKEN_SIGNING_KEY, NACOS_AUTH_PASSWORD_KEY,
+    MQ_TOKEN_SIGNING_KEY, NACOS_AUTH_PASSWORD_KEY, NACOS_RNACOS_CONSOLE_PASSWORD_KEY,
 };
 use crate::models::connection::{ConnectionConfig, DatabaseType, TransportLayerConfig};
 use crate::saved_sql::SavedSqlLibrary;
@@ -37,6 +37,7 @@ const SECRET_KEYS: &[&str] = &[
     MQ_AUTH_CLIENT_SECRET_KEY,
     MQ_TOKEN_SIGNING_KEY,
     NACOS_AUTH_PASSWORD_KEY,
+    NACOS_RNACOS_CONSOLE_PASSWORD_KEY,
 ];
 const SSH_TUNNEL_SECRET_PREFIX: &str = "ssh_tunnels.";
 const TRANSPORT_LAYER_SECRET_PREFIX: &str = "transport_layers.";
@@ -720,16 +721,25 @@ fn push_nacos_external_config_secrets(secrets: &mut Vec<ConnectionSecretSnapshot
     if config.db_type != DatabaseType::Nacos {
         return;
     }
-    let Some(auth) = config
+    if let Some(auth) = config
         .external_config
         .as_ref()
         .and_then(|external_config| external_config.get("auth"))
         .and_then(serde_json::Value::as_object)
-    else {
-        return;
-    };
-    if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
-        push_json_secret(secrets, &config.id, NACOS_AUTH_PASSWORD_KEY, auth, "password");
+    {
+        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
+            push_json_secret(secrets, &config.id, NACOS_AUTH_PASSWORD_KEY, auth, "password");
+        }
+    }
+    if let Some(auth) = config
+        .external_config
+        .as_ref()
+        .and_then(|external_config| external_config.get("rnacosConsoleAuth"))
+        .and_then(serde_json::Value::as_object)
+    {
+        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
+            push_json_secret(secrets, &config.id, NACOS_RNACOS_CONSOLE_PASSWORD_KEY, auth, "password");
+        }
     }
 }
 
@@ -760,17 +770,25 @@ fn scrub_nacos_auth_secrets(config: &mut ConnectionConfig) {
     if config.db_type != DatabaseType::Nacos {
         return;
     }
-    let Some(auth) = config
+    if let Some(auth) = config
         .external_config
         .as_mut()
         .and_then(|external_config| external_config.get_mut("auth"))
         .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") && auth.contains_key("password")
     {
-        scrub_json_secret(auth, "password");
+        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
+            scrub_json_secret(auth, "password");
+        }
+    }
+    if let Some(auth) = config
+        .external_config
+        .as_mut()
+        .and_then(|external_config| external_config.get_mut("rnacosConsoleAuth"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        if auth.get("kind").and_then(serde_json::Value::as_str) == Some("usernamePassword") {
+            scrub_json_secret(auth, "password");
+        }
     }
 }
 
@@ -1073,11 +1091,15 @@ mod tests {
                 proxy_url: String::new(),
                 enable_thinking: true,
                 reasoning_level: crate::ai::AiReasoningLevel::Default,
+                runtime_effort: None,
                 context_window: None,
+                max_retries: None,
                 codex_cli_path: None,
                 codex_cli_env: Default::default(),
                 claude_code_cli_path: None,
                 claude_code_cli_env: Default::default(),
+                pi_agent_cli_path: None,
+                pi_agent_cli_env: Default::default(),
             },
         }
     }
@@ -1099,6 +1121,7 @@ mod tests {
         ConnectionConfig {
             id: id.to_string(),
             name: "Postgres".to_string(),
+            note: String::new(),
             db_type: DatabaseType::Postgres,
             driver_profile: None,
             driver_label: None,
@@ -1111,6 +1134,7 @@ mod tests {
             database: Some("app_db".to_string()),
             visible_databases: None,
             visible_schemas: None,
+            show_system_schemas: false,
             attached_databases: Vec::new(),
             init_script: None,
             color: None,
@@ -1135,6 +1159,7 @@ mod tests {
             redis_cluster_nodes: String::new(),
             redis_key_separator: default_redis_key_separator(),
             redis_scan_page_size: None,
+            redis_database_aliases: Default::default(),
             etcd_endpoints: String::new(),
             gbase_server: String::new(),
             informix_server: String::new(),
@@ -1153,6 +1178,7 @@ mod tests {
         ConnectionConfig {
             id: id.to_string(),
             name: "Nacos".to_string(),
+            note: String::new(),
             db_type: DatabaseType::Nacos,
             driver_profile: None,
             driver_label: None,
@@ -1165,6 +1191,7 @@ mod tests {
             database: None,
             visible_databases: None,
             visible_schemas: None,
+            show_system_schemas: false,
             attached_databases: Vec::new(),
             init_script: None,
             color: None,
@@ -1189,6 +1216,7 @@ mod tests {
             redis_cluster_nodes: String::new(),
             redis_key_separator: default_redis_key_separator(),
             redis_scan_page_size: None,
+            redis_database_aliases: Default::default(),
             etcd_endpoints: String::new(),
             gbase_server: String::new(),
             informix_server: String::new(),
@@ -1244,6 +1272,7 @@ mod tests {
         let mut config = ConnectionConfig {
             id: "id".to_string(),
             name: "name".to_string(),
+            note: String::new(),
             db_type: DatabaseType::Postgres,
             driver_profile: None,
             driver_label: None,
@@ -1256,6 +1285,7 @@ mod tests {
             database: None,
             visible_databases: None,
             visible_schemas: None,
+            show_system_schemas: false,
             attached_databases: Vec::new(),
             init_script: Some("CREATE SECRET (TYPE quack, TOKEN 'token-value');".to_string()),
             color: None,
@@ -1307,6 +1337,7 @@ mod tests {
             redis_cluster_nodes: String::new(),
             redis_key_separator: default_redis_key_separator(),
             redis_scan_page_size: None,
+            redis_database_aliases: Default::default(),
             etcd_endpoints: String::new(),
             gbase_server: String::new(),
             informix_server: String::new(),

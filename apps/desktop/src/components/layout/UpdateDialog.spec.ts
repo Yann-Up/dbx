@@ -14,6 +14,7 @@ const mountedApps: App[] = [];
 interface DialogState {
   open: boolean;
   portableMode: boolean;
+  manualUpdateOnly: boolean;
   isDownloadingUpdate: boolean;
   downloadProgress: number;
   updateDownloaded: boolean;
@@ -30,6 +31,7 @@ async function mountDialog(activeTaskCount: number, initialState: Partial<Dialog
   const state = reactive<DialogState>({
     open: true,
     portableMode: false,
+    manualUpdateOnly: false,
     isDownloadingUpdate: false,
     downloadProgress: 0,
     updateDownloaded: false,
@@ -38,6 +40,7 @@ async function mountDialog(activeTaskCount: number, initialState: Partial<Dialog
     ...initialState,
   });
   const downloadAndInstall = vi.fn();
+  const cancelDownload = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
   const app = createApp(
@@ -67,6 +70,7 @@ async function mountDialog(activeTaskCount: number, initialState: Partial<Dialog
               latest_version: "0.5.61",
               update_available: true,
               portable_mode: state.portableMode,
+              manual_update_only: state.manualUpdateOnly,
               release_name: "DBX v0.5.61",
               release_url: "https://github.com/t8y2/dbx/releases/tag/v0.5.61",
               release_notes: "",
@@ -79,6 +83,7 @@ async function mountDialog(activeTaskCount: number, initialState: Partial<Dialog
             updateReady: state.updateReady,
             activeTaskCount,
             "onDownload-and-install": downloadAndInstall,
+            "onCancel-download": cancelDownload,
             "onInstall-downloaded": handleInstallDownloaded,
           });
       },
@@ -89,7 +94,7 @@ async function mountDialog(activeTaskCount: number, initialState: Partial<Dialog
   app.mount(container);
   await flushDialog();
 
-  return { state, downloadAndInstall, installDownloaded };
+  return { state, downloadAndInstall, cancelDownload, installDownloaded };
 }
 
 function buttonWithText(text: string): HTMLButtonElement | undefined {
@@ -136,6 +141,23 @@ describe("UpdateDialog active task guard", () => {
     expect(downloadButton()?.disabled).toBe(false);
   });
 
+  it("routes Windows 7 builds to the dedicated installer", async () => {
+    await mountDialog(0, { manualUpdateOnly: true });
+
+    expect(document.body.textContent).toContain("WebView2 109 offline installer");
+    expect(downloadButton()).toBeUndefined();
+    expect(buttonWithText("Open Release")).toBeDefined();
+  });
+
+  it("prevents Windows 7 portable builds from installing the regular x64 portable update", async () => {
+    await mountDialog(0, { portableMode: true, manualUpdateOnly: true });
+
+    expect(document.body.textContent).toContain("WebView2 109 offline installer");
+    expect(document.body.textContent).not.toContain("signed portable ZIP");
+    expect(downloadButton()).toBeUndefined();
+    expect(buttonWithText("Open Release")).toBeDefined();
+  });
+
   it("retains the downloaded update and enables installation only after tasks finish", async () => {
     await mountDialog(1, { updateDownloaded: true, downloadProgress: 100 });
 
@@ -151,6 +173,17 @@ describe("UpdateDialog active task guard", () => {
 });
 
 describe("UpdateDialog close protection", () => {
+  it("cancels the background download when the close button is clicked", async () => {
+    const { state, cancelDownload } = await mountDialog(0, { isDownloadingUpdate: true, downloadProgress: 42 });
+
+    const closeButton = document.body.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]');
+    closeButton?.click();
+    await flushDialog();
+
+    expect(cancelDownload).toHaveBeenCalledOnce();
+    expect(state.open).toBe(false);
+  });
+
   it("allows closing while a downloaded update is idle", async () => {
     const { state } = await mountDialog(0, { updateDownloaded: true, downloadProgress: 100 });
 
@@ -212,7 +245,7 @@ describe("UpdateDialog close protection", () => {
     expect(downloadAndInstall).not.toHaveBeenCalled();
   });
 
-  it("keeps the successful install flow protected", async () => {
+  it("allows dismissing after a successful install while restart remains available", async () => {
     const installDownloaded = vi.fn(async () => {});
     const { state, downloadAndInstall } = await mountDialog(0, { updateDownloaded: true }, installDownloaded);
 
@@ -222,9 +255,9 @@ describe("UpdateDialog close protection", () => {
     expect(state.updateDownloaded).toBe(false);
     expect(state.updateReady).toBe(true);
     expect(buttonWithText("Restart")).toBeDefined();
-    expect(buttonWithText("Cancel")).toBeUndefined();
+    expect(buttonWithText("Cancel")).toBeDefined();
     await pressEscape();
-    expect(state.open).toBe(true);
+    expect(state.open).toBe(false);
     expect(installDownloaded).toHaveBeenCalledOnce();
     expect(downloadAndInstall).not.toHaveBeenCalled();
   });
